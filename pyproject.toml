@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "ztask"
+version = "0.1.0"
+description = "CLI for LLMs and developers to manage tasks stored in Zenoh."
+authors = []
+readme = "README.md"
+packages = [{ include = "ztask" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+typer = "^0.12"
+eclipse-zenoh = "^1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-mock = "^3.14"
+
+[tool.poetry.scripts]
+ztask = "ztask.cli:app"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires a running container runtime (docker/container)",
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
