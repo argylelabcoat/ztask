@@ -1,0 +1,21 @@
+{
+  plugins: {
+    storage_manager: {
+      volumes: [{
+        name: "garry",
+        backend: "garry",
+        storages: [{
+          name: "projects",
+          key_expr: "projects/**",
+          volume: {
+            db_path: "/data/zenoh-garry",
+            pool_size: 256,
+            max_record_size: 1048576,
+            max_versions: 64,
+            compression: "lz4"
+          }
+        }]
+      }]
+    }
+  }
+}
