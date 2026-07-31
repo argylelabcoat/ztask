@@ -55,3 +55,56 @@ def test_get_not_found_exits_with_error(mocker):
 
     assert result.exit_code == 1
     assert "not found" in result.stdout + (result.stderr or "")
+
+
+def test_create_puts_status_entered_and_history(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--criteria", "Given X"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/status"] == "PENDING"
+    assert keys["projects/p1/tasks/t1/time_entered"] == "2026-07-31T00:00:00+00:00"
+    assert keys["projects/p1/tasks/t1/acceptance_criteria"] == "Given X"
+    history_key = "projects/p1/tasks/t1/history/2026-07-31T00-00-00+00-00"
+    assert history_key in keys
+    history_value = json.loads(keys[history_key])
+    assert history_value["from_status"] == "NONE"
+    assert history_value["to_status"] == "PENDING"
+
+
+def test_update_status_to_in_progress_sets_time_accepted(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({"projects/p1/tasks/t1/status": []})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.fetch_status", return_value="PENDING")
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T01:00:00+00:00")
+
+    result = runner.invoke(app, ["update-status", "--project", "p1", "t1", "in_progress", "--note", "starting"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/status"] == "IN_PROGRESS"
+    assert keys["projects/p1/tasks/t1/time_accepted"] == "2026-07-31T01:00:00+00:00"
+    assert "projects/p1/tasks/t1/time_completed" not in keys
+
+
+def test_update_status_to_completed_sets_time_completed(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.fetch_status", return_value="IN_PROGRESS")
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T02:00:00+00:00")
+
+    result = runner.invoke(app, ["update-status", "--project", "p1", "t1", "completed"])
+
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/status"] == "COMPLETED"
+    assert keys["projects/p1/tasks/t1/time_completed"] == "2026-07-31T02:00:00+00:00"

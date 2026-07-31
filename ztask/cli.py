@@ -56,5 +56,71 @@ def get_task(
         typer.echo(json.dumps(task.to_dict(), indent=2))
 
 
+@app.command("create")
+def create_task(
+    project_id: str = typer.Option(..., "--project", "-p", help="Project ID"),
+    task_id: str = typer.Argument(..., help="Task ID"),
+    criteria: str = typer.Option("", "--criteria", "-c", help="Acceptance criteria or Gherkin spec"),
+):
+    """Create a new task in PENDING state."""
+    base_key = f"projects/{project_id}/tasks/{task_id}"
+    now = get_iso_timestamp()
+
+    with open_session() as session:
+        session.put(f"{base_key}/status", "PENDING")
+        session.put(f"{base_key}/time_entered", now)
+        if criteria:
+            session.put(f"{base_key}/acceptance_criteria", criteria)
+
+        history_key = f"{base_key}/history/{now.replace(':', '-')}"
+        session.put(
+            history_key,
+            json.dumps({
+                "timestamp": now,
+                "from_status": "NONE",
+                "to_status": "PENDING",
+                "note": "Task created via CLI",
+            }),
+        )
+
+        typer.echo(f"Created task '{task_id}' in project '{project_id}'.")
+
+
+@app.command("update-status")
+def update_status(
+    project_id: str = typer.Option(..., "--project", "-p", help="Project ID"),
+    task_id: str = typer.Argument(..., help="Task ID"),
+    status: str = typer.Argument(..., help="New status (e.g., PENDING, IN_PROGRESS, COMPLETED)"),
+    note: str = typer.Option("", "--note", "-n", help="Optional reason or execution log note"),
+):
+    """Update task status and push transition to history log."""
+    base_key = f"projects/{project_id}/tasks/{task_id}"
+    now = get_iso_timestamp()
+    new_status = status.upper()
+
+    with open_session() as session:
+        old_status = fetch_status(session, project_id, task_id)
+
+        session.put(f"{base_key}/status", new_status)
+
+        if new_status in WIP_STATUSES and old_status not in WIP_STATUSES:
+            session.put(f"{base_key}/time_accepted", now)
+        elif new_status == TERMINAL_STATUS:
+            session.put(f"{base_key}/time_completed", now)
+
+        history_key = f"{base_key}/history/{now.replace(':', '-')}"
+        session.put(
+            history_key,
+            json.dumps({
+                "timestamp": now,
+                "from_status": old_status,
+                "to_status": new_status,
+                "note": note,
+            }),
+        )
+
+        typer.echo(f"Updated '{task_id}': {old_status} -> {new_status}")
+
+
 if __name__ == "__main__":
     app()
