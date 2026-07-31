@@ -19,6 +19,7 @@ pytest-mock = "^3.14"
 ztask = "ztask.cli:app"
 
 [tool.pytest.ini_options]
+addopts = "-m 'not integration'"
 markers = [
     "integration: requires a running container runtime (docker/container)",
 ]
