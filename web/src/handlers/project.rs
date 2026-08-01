@@ -14,13 +14,6 @@ pub struct ProjectTemplate {
     pub tasks: Vec<Task>,
 }
 
-#[derive(Template)]
-#[template(path = "task_row.html")]
-pub struct TaskRowTemplate {
-    pub project_id: String,
-    pub task: Task,
-}
-
 #[derive(Deserialize)]
 pub struct FilterQuery {
     #[serde(default = "default_filter")]
@@ -63,10 +56,10 @@ pub async fn create(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
     Form(form): Form<CreateTaskForm>,
-) -> HtmlTemplate<TaskRowTemplate> {
+) -> HtmlTemplate<crate::handlers::task::TaskRowTemplate> {
     let now = crate::iso_now();
     let task = crate::tasks::create_task(state.store.as_ref(), &project_id, &form.task_id, &form.criteria, &now).await;
-    HtmlTemplate(TaskRowTemplate { project_id, task })
+    HtmlTemplate(crate::handlers::task::TaskRowTemplate { project_id, task })
 }
 
 #[cfg(test)]

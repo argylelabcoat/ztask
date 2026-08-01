@@ -27,6 +27,7 @@ pub fn app(state: AppState) -> Router {
         .route("/", get(handlers::dashboard::show))
         .route("/projects/{id}", get(handlers::project::show))
         .route("/projects/{id}/tasks", post(handlers::project::create))
+        .route("/projects/{id}/tasks/{task_id}/status", post(handlers::task::update_status))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }
