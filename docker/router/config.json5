@@ -1,4 +1,7 @@
 {
+  plugins_loading: {
+    enabled: true
+  },
   plugins: {
     storage_manager: {
       volumes: [{

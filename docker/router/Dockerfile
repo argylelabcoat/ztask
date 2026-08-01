@@ -43,6 +43,33 @@ RUN set -eux; \
     fi; \
     ls -l /out/libzenoh_backend_garry.so
 
+# Build the zenoh-plugin-storage-manager plugin. This is a separately-built
+# dynamic plugin (distinct from the zenoh-backend-garry backend above) that
+# zenohd loads at runtime to actually drive any configured storage volumes.
+# A plain `cargo install zenohd` does NOT bundle it. Same
+# cargo-install-then-source-fallback pattern as the garry backend above:
+# try `cargo install` first and search for the resulting .so; if it isn't
+# found, fall back to a manual `git clone` + `cargo build --release`
+# against the plugin's own checkout (it lives in the main eclipse-zenoh/zenoh
+# repo) and copy the .so out of its target/release/ directory instead.
+RUN set -eux; \
+    ( cargo install zenoh-plugin-storage-manager --locked || true ); \
+    found="$(find /usr/local/cargo -iname '*zenoh_plugin_storage_manager*.so' -print -quit 2>/dev/null || true)"; \
+    if [ -n "$found" ]; then \
+        echo "Found cargo-install plugin artifact: $found"; \
+        mkdir -p /out; \
+        cp "$found" /out/libzenoh_plugin_storage_manager.so; \
+    else \
+        echo "cargo install did not produce a usable .so; building from source checkout instead"; \
+        git clone --depth 1 https://github.com/eclipse-zenoh/zenoh /src/zenoh; \
+        cd /src/zenoh; \
+        cargo build -p zenoh-plugin-storage-manager --release; \
+        built="$(find /src/zenoh/target/release -maxdepth 1 -iname '*zenoh_plugin_storage_manager*.so' -print -quit)"; \
+        mkdir -p /out; \
+        cp "$built" /out/libzenoh_plugin_storage_manager.so; \
+    fi; \
+    ls -l /out/libzenoh_plugin_storage_manager.so
+
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
@@ -53,6 +80,7 @@ RUN ldconfig
 
 COPY --from=build /usr/local/cargo/bin/zenohd /usr/local/bin/zenohd
 COPY --from=build /out/libzenoh_backend_garry.so /root/.zenoh/lib/libzenoh_backend_garry.so
+COPY --from=build /out/libzenoh_plugin_storage_manager.so /root/.zenoh/lib/libzenoh_plugin_storage_manager.so
 COPY docker/router/config.json5 /config.json5
 
 VOLUME ["/data"]
