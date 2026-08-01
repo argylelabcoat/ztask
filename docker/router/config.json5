@@ -4,21 +4,29 @@
   },
   plugins: {
     storage_manager: {
-      volumes: [{
-        name: "garry",
-        backend: "garry",
-        storages: [{
-          name: "projects",
+      volumes: {
+        garry: {
+          backend: "garry"
+        }
+      },
+      storages: {
+        projects: {
           key_expr: "projects/**",
           volume: {
-            db_path: "/data/zenoh-garry",
+            id: "garry",
+            // Points directly at the volume mount (not a subdirectory):
+            // zenoh-backend-garry's GarryStorage::new() only mkdirs
+            // db_path's *parent*, not db_path itself, so a subdirectory
+            // here would never actually get created before Garry tries
+            // to open a file inside it.
+            db_path: "/data",
             pool_size: 256,
             max_record_size: 1048576,
             max_versions: 64,
             compression: "lz4"
           }
-        }]
-      }]
+        }
+      }
     }
   }
 }
