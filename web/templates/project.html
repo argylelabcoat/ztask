@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ project_id }} — Zenoh Tasks{% endblock %}
+{% block content %}
+<h1>{{ project_id }}</h1>
+
+<nav>
+    <ul>
+        <li><a href="/projects/{{ project_id }}?filter=all">All</a></li>
+        <li><a href="/projects/{{ project_id }}?filter=incomplete">Incomplete</a></li>
+        <li><a href="/projects/{{ project_id }}?filter=wip">WIP</a></li>
+    </ul>
+</nav>
+
+<form hx-post="/projects/{{ project_id }}/tasks" hx-target="#task-list" hx-swap="afterbegin">
+    <fieldset role="group">
+        <input type="text" name="task_id" placeholder="Task ID" required>
+        <input type="text" name="criteria" placeholder="Acceptance criteria (optional)">
+        <button type="submit">Create task</button>
+    </fieldset>
+</form>
+
+<table>
+    <thead>
+        <tr><th>ID</th><th>Status</th><th>Entered by</th><th>Entered</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="task-list">
+        {% for task in tasks %}
+        {% include "task_row.html" %}
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

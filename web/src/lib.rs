@@ -21,6 +21,7 @@ pub struct AppState {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(handlers::dashboard::show))
+        .route("/projects/{id}", get(handlers::project::show))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }

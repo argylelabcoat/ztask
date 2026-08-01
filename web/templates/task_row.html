@@ -1,0 +1,26 @@
+<tr id="task-{{ task.id }}">
+    <td><a href="/projects/{{ project_id }}/tasks/{{ task.id }}">{{ task.id }}</a></td>
+    <td>{{ task.status }}</td>
+    <td>{{ task.entered_by.as_deref().unwrap_or("-") }}</td>
+    <td>{{ task.time_entered.as_deref().unwrap_or("-") }}</td>
+    <td>
+        <form hx-post="/projects/{{ project_id }}/tasks/{{ task.id }}/status"
+              hx-target="#task-{{ task.id }}" hx-swap="outerHTML" style="display:inline">
+            <select name="status">
+                <option value="PENDING" {% if task.status == "PENDING" %}selected{% endif %}>PENDING</option>
+                <option value="IN_PROGRESS" {% if task.status == "IN_PROGRESS" %}selected{% endif %}>IN_PROGRESS</option>
+                <option value="COMPLETED" {% if task.status == "COMPLETED" %}selected{% endif %}>COMPLETED</option>
+            </select>
+            <button type="submit">Update</button>
+        </form>
+        <form hx-post="/projects/{{ project_id }}/tasks/{{ task.id }}/criteria"
+              hx-target="#task-{{ task.id }}" hx-swap="outerHTML" style="display:inline">
+            <input type="text" name="criteria" value='{{ task.acceptance_criteria.as_deref().unwrap_or("") }}'
+                   placeholder="Acceptance criteria">
+            <button type="submit">Save</button>
+        </form>
+        <button hx-delete="/projects/{{ project_id }}/tasks/{{ task.id }}"
+                hx-target="#task-{{ task.id }}" hx-swap="delete"
+                hx-confirm="Delete task {{ task.id }}?">Delete</button>
+    </td>
+</tr>
