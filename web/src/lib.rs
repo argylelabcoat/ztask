@@ -1,3 +1,4 @@
+pub mod models;
 pub mod zenoh_store;
 
 use std::sync::Arc;
