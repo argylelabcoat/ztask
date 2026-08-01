@@ -8,7 +8,7 @@ pub mod zenoh_store;
 
 use std::sync::Arc;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 
 use zenoh_store::ZenohStore;
@@ -29,6 +29,7 @@ pub fn app(state: AppState) -> Router {
         .route("/projects/{id}/tasks", post(handlers::project::create))
         .route("/projects/{id}/tasks/{task_id}/status", post(handlers::task::update_status))
         .route("/projects/{id}/tasks/{task_id}/criteria", post(handlers::task::edit_criteria))
+        .route("/projects/{id}/tasks/{task_id}", delete(handlers::task::delete))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }

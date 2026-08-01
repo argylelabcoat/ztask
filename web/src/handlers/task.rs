@@ -51,6 +51,14 @@ pub async fn edit_criteria(
     }
 }
 
+pub async fn delete(
+    State(state): State<AppState>,
+    Path((project_id, task_id)): Path<(String, String)>,
+) -> StatusCode {
+    crate::tasks::delete_task(state.store.as_ref(), &project_id, &task_id).await;
+    StatusCode::OK
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
@@ -145,5 +153,26 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn delete_task_removes_it() {
+        let store = Arc::new(FakeStore::new().seed("projects/p1/tasks/t1/status", "PENDING"));
+        let state = AppState { store: store.clone() as Arc<dyn ZenohStore> };
+
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/projects/p1/tasks/t1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let delete_calls = store.delete_calls.lock().unwrap();
+        assert_eq!(delete_calls.as_slice(), ["projects/p1/tasks/t1/**".to_string()]);
     }
 }
