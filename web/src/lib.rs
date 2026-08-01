@@ -1,5 +1,6 @@
 pub mod models;
 pub mod queries;
+pub mod tasks;
 pub mod zenoh_client;
 pub mod zenoh_store;
 
