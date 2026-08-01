@@ -1,5 +1,7 @@
+pub mod handlers;
 pub mod models;
 pub mod queries;
+pub mod render;
 pub mod tasks;
 pub mod zenoh_client;
 pub mod zenoh_store;
@@ -18,6 +20,7 @@ pub struct AppState {
 
 pub fn app(state: AppState) -> Router {
     Router::new()
+        .route("/", get(handlers::dashboard::show))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }

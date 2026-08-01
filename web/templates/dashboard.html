@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}All Projects — Zenoh Tasks{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+{% if projects.is_empty() %}
+<p>No projects yet.</p>
+{% else %}
+<table>
+    <thead>
+        <tr><th>Project</th><th>Total</th><th>Incomplete</th><th>WIP</th></tr>
+    </thead>
+    <tbody>
+        {% for p in projects %}
+        <tr>
+            <td><a href="/projects/{{ p.id }}">{{ p.id }}</a></td>
+            <td>{{ p.total }}</td>
+            <td>{{ p.incomplete }}</td>
+            <td>{{ p.wip }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
