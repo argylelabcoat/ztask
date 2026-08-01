@@ -59,6 +59,23 @@ pub async fn delete(
     StatusCode::OK
 }
 
+#[derive(Template)]
+#[template(path = "task_detail.html")]
+pub struct TaskDetailTemplate {
+    pub project_id: String,
+    pub task: Task,
+}
+
+pub async fn show(
+    State(state): State<AppState>,
+    Path((project_id, task_id)): Path<(String, String)>,
+) -> Result<HtmlTemplate<TaskDetailTemplate>, StatusCode> {
+    match crate::queries::fetch_task(state.store.as_ref(), &project_id, &task_id).await {
+        Some(task) => Ok(HtmlTemplate(TaskDetailTemplate { project_id, task })),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
@@ -174,5 +191,39 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let delete_calls = store.delete_calls.lock().unwrap();
         assert_eq!(delete_calls.as_slice(), ["projects/p1/tasks/t1/**".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn task_detail_shows_history() {
+        use http_body_util::BodyExt;
+
+        let store = FakeStore::new().seed("projects/p1/tasks/t1/status", "COMPLETED").seed(
+            "projects/p1/tasks/t1/history/2026-08-01T00-00-00",
+            r#"{"timestamp":"2026-08-01T00:00:00","from_status":"NONE","to_status":"PENDING","note":"created"}"#,
+        );
+        let state = AppState { store: Arc::new(store) as Arc<dyn ZenohStore> };
+
+        let response = app(state)
+            .oneshot(Request::builder().uri("/projects/p1/tasks/t1").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        assert!(html.contains("created"));
+    }
+
+    #[tokio::test]
+    async fn task_detail_missing_returns_404() {
+        let store = FakeStore::new();
+        let state = AppState { store: Arc::new(store) as Arc<dyn ZenohStore> };
+
+        let response = app(state)
+            .oneshot(Request::builder().uri("/projects/p1/tasks/missing").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

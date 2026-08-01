@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ task.id }} — {{ project_id }}{% endblock %}
+{% block content %}
+<h1>{{ task.id }}</h1>
+<p><a href="/projects/{{ project_id }}">&larr; back to {{ project_id }}</a></p>
+
+<table>
+    <tbody>
+        <tr><th>Status</th><td>{{ task.status }}</td></tr>
+        <tr><th>Entered by</th><td>{{ task.entered_by.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Time entered</th><td>{{ task.time_entered.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Time accepted</th><td>{{ task.time_accepted.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Time completed</th><td>{{ task.time_completed.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Acceptance criteria</th><td>{{ task.acceptance_criteria.as_deref().unwrap_or("-") }}</td></tr>
+    </tbody>
+</table>
+
+<h2>History</h2>
+{% if task.history.is_empty() %}
+<p>No history entries.</p>
+{% else %}
+<table>
+    <thead><tr><th>Timestamp</th><th>From</th><th>To</th><th>Note</th></tr></thead>
+    <tbody>
+        {% for entry in task.history %}
+        <tr>
+            <td>{{ entry.timestamp }}</td>
+            <td>{{ entry.from_status }}</td>
+            <td>{{ entry.to_status }}</td>
+            <td>{{ entry.note }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
