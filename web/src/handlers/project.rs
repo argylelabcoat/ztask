@@ -1,5 +1,6 @@
 use askama::Template;
 use axum::extract::{Path, Query, State};
+use axum::Form;
 use serde::Deserialize;
 
 use crate::models::Task;
@@ -51,6 +52,23 @@ pub async fn show(
     HtmlTemplate(ProjectTemplate { project_id, tasks })
 }
 
+#[derive(Deserialize)]
+pub struct CreateTaskForm {
+    task_id: String,
+    #[serde(default)]
+    criteria: String,
+}
+
+pub async fn create(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Form(form): Form<CreateTaskForm>,
+) -> HtmlTemplate<TaskRowTemplate> {
+    let now = crate::iso_now();
+    let task = crate::tasks::create_task(state.store.as_ref(), &project_id, &form.task_id, &form.criteria, &now).await;
+    HtmlTemplate(TaskRowTemplate { project_id, task })
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
@@ -97,5 +115,32 @@ mod tests {
         let html = String::from_utf8(body.to_vec()).unwrap();
         assert!(html.contains("t1"));
         assert!(html.contains("t2"));
+    }
+
+    #[tokio::test]
+    async fn create_task_adds_row_and_persists_fields() {
+        let store = Arc::new(FakeStore::new());
+        let state = AppState { store: store.clone() as Arc<dyn crate::zenoh_store::ZenohStore> };
+
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/projects/p1/tasks")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("task_id=t1&criteria=Given+X"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        assert!(html.contains("t1"));
+
+        let put_calls = store.put_calls.lock().unwrap();
+        assert!(put_calls.iter().any(|(k, v)| k == "projects/p1/tasks/t1/status" && v == "PENDING"));
+        assert!(put_calls.iter().any(|(k, v)| k == "projects/p1/tasks/t1/entered_by" && v == "USER"));
     }
 }

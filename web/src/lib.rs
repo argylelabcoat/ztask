@@ -8,7 +8,7 @@ pub mod zenoh_store;
 
 use std::sync::Arc;
 
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 use zenoh_store::ZenohStore;
@@ -18,10 +18,15 @@ pub struct AppState {
     pub store: Arc<dyn ZenohStore>,
 }
 
+pub fn iso_now() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(handlers::dashboard::show))
         .route("/projects/{id}", get(handlers::project::show))
+        .route("/projects/{id}/tasks", post(handlers::project::create))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }
