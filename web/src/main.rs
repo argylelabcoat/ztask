@@ -19,6 +19,13 @@ async fn main() {
         }
     };
 
+    // zenoh::open() can return successfully before the transport link is
+    // fully registered in the session's routing table — a request issued
+    // in that window can silently compute an empty route. A short settle
+    // delay avoids that cold-start race without adding meaningful startup
+    // latency.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     let store: Arc<dyn ZenohStore> = Arc::new(RealZenohStore::new(session));
     let state = AppState { store };
 

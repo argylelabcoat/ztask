@@ -28,20 +28,25 @@ pub async fn create_task(
         store.put(&format!("{base}/acceptance_criteria"), criteria).await;
     }
 
-    let history_value = serde_json::json!({
+    let history_json = serde_json::json!({
         "timestamp": now,
         "from_status": "NONE",
         "to_status": "PENDING",
         "note": "Task created via web UI",
-    })
-    .to_string();
+    });
     store
-        .put(&format!("{base}/history/{}", history_key(now)), &history_value)
+        .put(&format!("{base}/history/{}", history_key(now)), &history_json.to_string())
         .await;
 
-    queries::fetch_task(store, project_id, task_id)
-        .await
-        .unwrap_or_else(|| Task::new(task_id))
+    let mut task = Task::new(task_id);
+    task.status = "PENDING".to_string();
+    task.time_entered = Some(now.to_string());
+    task.entered_by = Some(ENTERED_BY_USER.to_string());
+    if !criteria.is_empty() {
+        task.acceptance_criteria = Some(criteria.to_string());
+    }
+    task.history.push(serde_json::from_value(history_json).expect("history entry is well-formed"));
+    task
 }
 
 pub async fn update_status(
@@ -53,35 +58,36 @@ pub async fn update_status(
     now: &str,
 ) -> Result<Task, TaskError> {
     let base = format!("projects/{project_id}/tasks/{task_id}");
-    let old_status = queries::fetch_status(store, project_id, task_id).await;
-    if old_status == "UNKNOWN" {
-        return Err(TaskError::NotFound);
-    }
+    let mut task = queries::fetch_task(store, project_id, task_id)
+        .await
+        .ok_or(TaskError::NotFound)?;
+    let old_status = task.status.clone();
 
     let new_status = status.to_uppercase();
     store.put(&format!("{base}/status"), &new_status).await;
+    task.status = new_status.clone();
 
     let is_wip = |s: &str| WIP_STATUSES.contains(&s);
     if is_wip(&new_status) && !is_wip(&old_status) {
         store.put(&format!("{base}/time_accepted"), now).await;
+        task.time_accepted = Some(now.to_string());
     } else if new_status == TERMINAL_STATUS {
         store.put(&format!("{base}/time_completed"), now).await;
+        task.time_completed = Some(now.to_string());
     }
 
-    let history_value = serde_json::json!({
+    let history_json = serde_json::json!({
         "timestamp": now,
         "from_status": old_status,
         "to_status": new_status,
         "note": note,
-    })
-    .to_string();
+    });
     store
-        .put(&format!("{base}/history/{}", history_key(now)), &history_value)
+        .put(&format!("{base}/history/{}", history_key(now)), &history_json.to_string())
         .await;
+    task.history.push(serde_json::from_value(history_json).expect("history entry is well-formed"));
 
-    queries::fetch_task(store, project_id, task_id)
-        .await
-        .ok_or(TaskError::NotFound)
+    Ok(task)
 }
 
 pub async fn edit_criteria(
@@ -92,27 +98,26 @@ pub async fn edit_criteria(
     now: &str,
 ) -> Result<Task, TaskError> {
     let base = format!("projects/{project_id}/tasks/{task_id}");
-    let status = queries::fetch_status(store, project_id, task_id).await;
-    if status == "UNKNOWN" {
-        return Err(TaskError::NotFound);
-    }
+    let mut task = queries::fetch_task(store, project_id, task_id)
+        .await
+        .ok_or(TaskError::NotFound)?;
+    let status = task.status.clone();
 
     store.put(&format!("{base}/acceptance_criteria"), criteria).await;
+    task.acceptance_criteria = Some(criteria.to_string());
 
-    let history_value = serde_json::json!({
+    let history_json = serde_json::json!({
         "timestamp": now,
         "from_status": status,
         "to_status": status,
         "note": "criteria updated",
-    })
-    .to_string();
+    });
     store
-        .put(&format!("{base}/history/{}", history_key(now)), &history_value)
+        .put(&format!("{base}/history/{}", history_key(now)), &history_json.to_string())
         .await;
+    task.history.push(serde_json::from_value(history_json).expect("history entry is well-formed"));
 
-    queries::fetch_task(store, project_id, task_id)
-        .await
-        .ok_or(TaskError::NotFound)
+    Ok(task)
 }
 
 pub async fn delete_task(store: &dyn ZenohStore, project_id: &str, task_id: &str) {
