@@ -7,6 +7,7 @@ def test_fetch_all_tasks_groups_fields_by_task_id():
         "projects/p1/tasks/**": [
             FakeReply("projects/p1/tasks/t1/status", "PENDING"),
             FakeReply("projects/p1/tasks/t1/time_entered", "2026-07-31T00:00:00+00:00"),
+            FakeReply("projects/p1/tasks/t1/entered_by", "LLM"),
             FakeReply("projects/p1/tasks/t2/status", "COMPLETED"),
             FakeReply(
                 "projects/p1/tasks/t1/history/2026-07-31T00-00-00",
@@ -21,6 +22,7 @@ def test_fetch_all_tasks_groups_fields_by_task_id():
     assert set(tasks.keys()) == {"t1", "t2"}
     assert tasks["t1"].status == "PENDING"
     assert tasks["t1"].time_entered == "2026-07-31T00:00:00+00:00"
+    assert tasks["t1"].entered_by == "LLM"
     assert tasks["t1"].history == [
         {"timestamp": "t", "from_status": "NONE", "to_status": "PENDING", "note": ""}
     ]

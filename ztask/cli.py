@@ -10,6 +10,7 @@ app = typer.Typer(help="CLI tool for LLMs and developers to manage tasks in Zeno
 
 TERMINAL_STATUS = "COMPLETED"
 WIP_STATUSES = {"IN_PROGRESS", "WIP", "RUNNING"}
+ENTERED_BY_VALUES = {"LLM", "USER"}
 
 
 def get_iso_timestamp() -> str:
@@ -68,14 +69,26 @@ def create_task(
     project_id: str = typer.Option(..., "--project", "-p", help="Project ID"),
     task_id: str = typer.Argument(..., help="Task ID"),
     criteria: str = typer.Option("", "--criteria", "-c", help="Acceptance criteria or Gherkin spec"),
+    entered_by: str = typer.Option(
+        "llm", "--entered-by", help="Who entered this task: 'llm' or 'user'. Defaults to 'llm' since this CLI is primarily LLM-driven."
+    ),
 ):
     """Create a new task in PENDING state."""
+    entered_by_normalized = entered_by.upper()
+    if entered_by_normalized not in ENTERED_BY_VALUES:
+        typer.echo(
+            f"Error: unknown entered-by '{entered_by}'. Expected 'llm' or 'user'.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
     base_key = f"projects/{project_id}/tasks/{task_id}"
     now = get_iso_timestamp()
 
     with open_session() as session:
         session.put(f"{base_key}/status", "PENDING")
         session.put(f"{base_key}/time_entered", now)
+        session.put(f"{base_key}/entered_by", entered_by_normalized)
         if criteria:
             session.put(f"{base_key}/acceptance_criteria", criteria)
 

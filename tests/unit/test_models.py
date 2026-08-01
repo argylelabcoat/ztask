@@ -14,6 +14,7 @@ def test_task_to_dict_includes_all_fields():
         status="PENDING",
         time_entered="2026-07-31T00:00:00+00:00",
         acceptance_criteria="Given X, When Y, Then Z",
+        entered_by="LLM",
         history=[{"timestamp": "t", "from_status": "NONE", "to_status": "PENDING", "note": ""}],
     )
     result = task.to_dict()
@@ -24,6 +25,7 @@ def test_task_to_dict_includes_all_fields():
         "time_accepted": None,
         "time_completed": None,
         "acceptance_criteria": "Given X, When Y, Then Z",
+        "entered_by": "LLM",
         "history": [{"timestamp": "t", "from_status": "NONE", "to_status": "PENDING", "note": ""}],
     }
 

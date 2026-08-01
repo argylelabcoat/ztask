@@ -15,6 +15,8 @@ def _apply_field(task: Task, field_name: str, value: str) -> None:
         task.time_completed = value
     elif field_name == "acceptance_criteria":
         task.acceptance_criteria = value
+    elif field_name == "entered_by":
+        task.entered_by = value
     elif field_name.startswith("history/"):
         try:
             task.history.append(json.loads(value))

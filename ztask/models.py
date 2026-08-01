@@ -10,6 +10,7 @@ class Task:
     time_accepted: Optional[str] = None
     time_completed: Optional[str] = None
     acceptance_criteria: Optional[str] = None
+    entered_by: Optional[str] = None
     history: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -20,5 +21,6 @@ class Task:
             "time_accepted": self.time_accepted,
             "time_completed": self.time_completed,
             "acceptance_criteria": self.acceptance_criteria,
+            "entered_by": self.entered_by,
             "history": self.history,
         }

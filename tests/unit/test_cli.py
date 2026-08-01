@@ -82,11 +82,53 @@ def test_create_puts_status_entered_and_history(mocker):
     assert keys["projects/p1/tasks/t1/status"] == "PENDING"
     assert keys["projects/p1/tasks/t1/time_entered"] == "2026-07-31T00:00:00+00:00"
     assert keys["projects/p1/tasks/t1/acceptance_criteria"] == "Given X"
+    assert keys["projects/p1/tasks/t1/entered_by"] == "LLM"
     history_key = "projects/p1/tasks/t1/history/2026-07-31T00-00-00+00-00"
     assert history_key in keys
     history_value = json.loads(keys[history_key])
     assert history_value["from_status"] == "NONE"
     assert history_value["to_status"] == "PENDING"
+
+
+def test_create_defaults_entered_by_to_llm(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/entered_by"] == "LLM"
+
+
+def test_create_entered_by_user_is_normalized_uppercase(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--entered-by", "user"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/entered_by"] == "USER"
+
+
+def test_create_unknown_entered_by_exits_with_error(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--entered-by", "bogus"])
+
+    assert result.exit_code == 1
+    assert "unknown entered-by" in result.stdout + (result.stderr or "")
+    assert session.put_calls == []
 
 
 def test_update_status_to_in_progress_sets_time_accepted(mocker):
