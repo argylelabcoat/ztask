@@ -24,6 +24,13 @@ def list_tasks(
     ),
 ):
     """List tasks filtered by state: all, incomplete, or wip."""
+    if filter_type not in ("all", "incomplete", "wip"):
+        typer.echo(
+            f"Error: unknown filter '{filter_type}'. Expected 'all', 'incomplete', or 'wip'.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
     with open_session() as session:
         all_tasks = fetch_all_tasks(session, project_id)
 
@@ -100,6 +107,10 @@ def update_status(
 
     with open_session() as session:
         old_status = fetch_status(session, project_id, task_id)
+
+        if old_status == "UNKNOWN":
+            typer.echo(f"Error: Task '{task_id}' not found in project '{project_id}'.", err=True)
+            raise typer.Exit(code=1)
 
         session.put(f"{base_key}/status", new_status)
 

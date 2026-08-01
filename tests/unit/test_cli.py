@@ -37,6 +37,17 @@ def test_list_incomplete_excludes_completed(mocker):
     assert [t["id"] for t in payload] == ["t1"]
 
 
+def test_list_unknown_filter_exits_with_error(mocker):
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = "session"
+    fetch_all_tasks_mock = mocker.patch("ztask.cli.fetch_all_tasks")
+
+    result = runner.invoke(app, ["list", "--project", "p1", "--filter", "bogus"])
+
+    assert result.exit_code == 1
+    assert "unknown filter" in result.stdout + (result.stderr or "")
+    fetch_all_tasks_mock.assert_not_called()
+
+
 def test_get_found_prints_task_json(mocker):
     mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = "session"
     mocker.patch("ztask.cli.fetch_task", return_value=Task(id="t1", status="PENDING"))
@@ -108,3 +119,17 @@ def test_update_status_to_completed_sets_time_completed(mocker):
     keys = dict(session.put_calls)
     assert keys["projects/p1/tasks/t1/status"] == "COMPLETED"
     assert keys["projects/p1/tasks/t1/time_completed"] == "2026-07-31T02:00:00+00:00"
+
+
+def test_update_status_missing_task_exits_with_error(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.fetch_status", return_value="UNKNOWN")
+
+    result = runner.invoke(app, ["update-status", "--project", "p1", "missing", "completed"])
+
+    assert result.exit_code == 1
+    assert "not found" in result.stdout + (result.stderr or "")
+    assert session.put_calls == []
