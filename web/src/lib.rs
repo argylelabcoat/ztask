@@ -30,6 +30,8 @@ pub fn app(state: AppState) -> Router {
         .route("/projects/{id}/tasks/{task_id}/status", post(handlers::task::update_status))
         .route("/projects/{id}/tasks/{task_id}/criteria", post(handlers::task::edit_criteria))
         .route("/projects/{id}/tasks/{task_id}", get(handlers::task::show).delete(handlers::task::delete))
+        .route("/static/style.css", get(handlers::static_assets::style_css))
+        .route("/static/htmx.min.js", get(handlers::static_assets::htmx_js))
         .route("/healthz", get(|| async { "ok" }))
         .with_state(state)
 }
