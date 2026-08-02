@@ -133,9 +133,22 @@ tests (see Testing).
 - **Startup**: zenoh session open failure → log and exit non-zero. No
   retries.
 - **Missing task/project**: 404 response with a small "not found" template.
-- **Put/delete/get failures mid-request**: 500 response with an inline error
-  banner in the htmx response fragment (so the swap target shows the error
-  in place), logged server-side. No retries in v1.
+- **Put/delete failures mid-request**: best-effort — the `ZenohStore` trait's
+  `put`/`delete` return no result; `RealZenohStore` logs the failure via
+  `tracing::warn!` and the request proceeds, rendering the locally-known
+  post-write state rather than a store round-trip (see the read-after-write
+  fix below). Revisited from the original design, which called for a 500 +
+  inline error banner on write failure: implementing that would mean
+  threading a fallible result through every handler and both `ZenohStore`
+  implementations, a change judged not worth making as a late, unreviewed
+  addition. On a trusted local network with a fail-fast startup check,
+  mid-request zenoh failures are rare; logged-and-continue is an accepted
+  trade-off for v1. No retries.
+- **Path parameters**: `project_id`/`task_id` are validated against a safe
+  charset (reject empty strings and zenoh key-expression special characters
+  `* ? # $ /`) before being used to construct any key expression, returning
+  400 on rejection. This bounds the blast radius of a malformed ID
+  expanding into a wildcard delete against the real store.
 
 ## Testing
 
