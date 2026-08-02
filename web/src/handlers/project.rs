@@ -1,5 +1,6 @@
 use askama::Template;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::Form;
 use serde::Deserialize;
 
@@ -37,12 +38,16 @@ pub async fn show(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
     Query(query): Query<FilterQuery>,
-) -> HtmlTemplate<ProjectTemplate> {
+) -> Result<HtmlTemplate<ProjectTemplate>, StatusCode> {
+    if !crate::is_valid_id(&project_id) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let all_tasks = queries::fetch_all_tasks(state.store.as_ref(), &project_id).await;
     let mut tasks: Vec<Task> = all_tasks.into_values().filter(|t| matches_filter(t, &query.filter)).collect();
     tasks.sort_by(|a, b| a.id.cmp(&b.id));
 
-    HtmlTemplate(ProjectTemplate { project_id, tasks })
+    Ok(HtmlTemplate(ProjectTemplate { project_id, tasks }))
 }
 
 #[derive(Deserialize)]
@@ -56,10 +61,14 @@ pub async fn create(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
     Form(form): Form<CreateTaskForm>,
-) -> HtmlTemplate<crate::handlers::task::TaskRowTemplate> {
+) -> Result<HtmlTemplate<crate::handlers::task::TaskRowTemplate>, StatusCode> {
+    if !crate::is_valid_id(&project_id) || !crate::is_valid_id(&form.task_id) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let now = crate::iso_now();
     let task = crate::tasks::create_task(state.store.as_ref(), &project_id, &form.task_id, &form.criteria, &now).await;
-    HtmlTemplate(crate::handlers::task::TaskRowTemplate { project_id, task })
+    Ok(HtmlTemplate(crate::handlers::task::TaskRowTemplate { project_id, task }))
 }
 
 #[cfg(test)]
@@ -108,6 +117,19 @@ mod tests {
         let html = String::from_utf8(body.to_vec()).unwrap();
         assert!(html.contains("t1"));
         assert!(html.contains("t2"));
+    }
+
+    #[tokio::test]
+    async fn project_page_with_wildcard_id_rejected() {
+        let store = FakeStore::new();
+        let state = AppState { store: Arc::new(store) };
+
+        let response = app(state)
+            .oneshot(Request::builder().uri("/projects/*").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

@@ -57,17 +57,6 @@ pub async fn fetch_task(store: &dyn ZenohStore, project_id: &str, task_id: &str)
     result
 }
 
-pub async fn fetch_status(store: &dyn ZenohStore, project_id: &str, task_id: &str) -> String {
-    let key = format!("projects/{project_id}/tasks/{task_id}/status");
-    store
-        .get(&key)
-        .await
-        .into_iter()
-        .next()
-        .map(|(_, value)| value)
-        .unwrap_or_else(|| "UNKNOWN".to_string())
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectSummary {
     pub id: String,
@@ -139,18 +128,6 @@ mod tests {
 
         let missing = fetch_task(&store, "p1", "missing").await;
         assert!(missing.is_none());
-    }
-
-    #[tokio::test]
-    async fn fetch_status_returns_unknown_when_key_absent() {
-        let store = FakeStore::new();
-        assert_eq!(fetch_status(&store, "p1", "t1").await, "UNKNOWN");
-    }
-
-    #[tokio::test]
-    async fn fetch_status_returns_value_when_present() {
-        let store = FakeStore::new().seed("projects/p1/tasks/t1/status", "IN_PROGRESS");
-        assert_eq!(fetch_status(&store, "p1", "t1").await, "IN_PROGRESS");
     }
 
     #[tokio::test]

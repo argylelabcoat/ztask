@@ -27,6 +27,10 @@ pub async fn update_status(
     Path((project_id, task_id)): Path<(String, String)>,
     Form(form): Form<UpdateStatusForm>,
 ) -> Result<HtmlTemplate<TaskRowTemplate>, StatusCode> {
+    if !crate::is_valid_id(&project_id) || !crate::is_valid_id(&task_id) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let now = crate::iso_now();
     match crate::tasks::update_status(state.store.as_ref(), &project_id, &task_id, &form.status, &form.note, &now).await {
         Ok(task) => Ok(HtmlTemplate(TaskRowTemplate { project_id, task })),
@@ -44,6 +48,10 @@ pub async fn edit_criteria(
     Path((project_id, task_id)): Path<(String, String)>,
     Form(form): Form<EditCriteriaForm>,
 ) -> Result<HtmlTemplate<TaskRowTemplate>, StatusCode> {
+    if !crate::is_valid_id(&project_id) || !crate::is_valid_id(&task_id) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     let now = crate::iso_now();
     match crate::tasks::edit_criteria(state.store.as_ref(), &project_id, &task_id, &form.criteria, &now).await {
         Ok(task) => Ok(HtmlTemplate(TaskRowTemplate { project_id, task })),
@@ -55,6 +63,10 @@ pub async fn delete(
     State(state): State<AppState>,
     Path((project_id, task_id)): Path<(String, String)>,
 ) -> StatusCode {
+    if !crate::is_valid_id(&project_id) || !crate::is_valid_id(&task_id) {
+        return StatusCode::BAD_REQUEST;
+    }
+
     crate::tasks::delete_task(state.store.as_ref(), &project_id, &task_id).await;
     StatusCode::OK
 }
@@ -70,6 +82,10 @@ pub async fn show(
     State(state): State<AppState>,
     Path((project_id, task_id)): Path<(String, String)>,
 ) -> Result<HtmlTemplate<TaskDetailTemplate>, StatusCode> {
+    if !crate::is_valid_id(&project_id) || !crate::is_valid_id(&task_id) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     match crate::queries::fetch_task(state.store.as_ref(), &project_id, &task_id).await {
         Some(task) => Ok(HtmlTemplate(TaskDetailTemplate { project_id, task })),
         None => Err(StatusCode::NOT_FOUND),
@@ -212,6 +228,27 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let html = String::from_utf8(body.to_vec()).unwrap();
         assert!(html.contains("created"));
+    }
+
+    #[tokio::test]
+    async fn delete_task_with_wildcard_id_rejected_without_hitting_store() {
+        let store = Arc::new(FakeStore::new().seed("projects/p1/tasks/t1/status", "PENDING"));
+        let state = AppState { store: store.clone() as Arc<dyn ZenohStore> };
+
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/projects/p1/tasks/*")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let delete_calls = store.delete_calls.lock().unwrap();
+        assert!(delete_calls.is_empty());
     }
 
     #[tokio::test]

@@ -22,6 +22,10 @@ pub fn iso_now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+pub fn is_valid_id(value: &str) -> bool {
+    !value.is_empty() && !value.contains(['*', '?', '#', '$', '/'])
+}
+
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(handlers::dashboard::show))
