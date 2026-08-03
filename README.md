@@ -53,6 +53,31 @@ Every status change and task creation appends an entry to the task's
 history log. See `docs/superpowers/specs/2026-07-31-zenoh-task-tracker-design.md`
 for the full design.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    LLM["LLM agent\n(ztask CLI)"] -->|zenoh put/get| Router
+    User["Human\n(browser)"] -->|HTTP :8080| Web["ztask-web\naxum + askama + htmx"]
+    Web -->|zenoh put/get| Router["zenoh-router\nzenohd + garry backend"]
+    Router --> Storage[("Garry storage\nprojects/**")]
+```
+
+Both `ztask` (Python CLI) and `ztask-web` (Rust admin UI) talk to the same
+`zenohd` router over the zenoh wire protocol; the router persists everything
+through the Garry storage plugin. Neither client talks to the other — the
+keyspace is the shared contract.
+
+## Screenshots
+
+**All-projects dashboard:**
+
+![All-projects dashboard](docs/images/dashboard.png)
+
+**Per-project view:**
+
+![Per-project view](docs/images/project.png)
+
 ## Web UI
 
 Source at `web/` (crate `ztask-web`). Talks to the router directly over the
