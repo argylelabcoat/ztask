@@ -171,10 +171,7 @@ pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
         let parts: Vec<&str> = key.split('/').collect();
         let Some(project_id) = parts.get(1) else { continue };
         let Some(summary) = summaries.get_mut(*project_id) else { continue };
-        let Some(timestamp) = serde_json::from_str::<serde_json::Value>(&value)
-            .ok()
-            .and_then(|json| json.get("timestamp").and_then(|t| t.as_str()).map(str::to_string))
-        else {
+        let Some(timestamp) = serde_json::from_str::<HistoryEntry>(&value).ok().map(|entry| entry.timestamp) else {
             continue;
         };
         let should_update = match &summary.last_activity {
