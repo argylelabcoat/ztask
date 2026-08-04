@@ -22,10 +22,12 @@
                        placeholder="Acceptance criteria" style="width:12rem; margin:0">
                 <button type="submit" style="width:auto; margin:0">Save</button>
             </form>
-            <button hx-delete="/projects/{{ project_id }}/tasks/{{ task.id }}"
-                    hx-target="#task-{{ task.id }}" hx-swap="delete"
-                    hx-confirm="Delete task {{ task.id }}?"
-                    style="width:auto; margin:0">Delete</button>
         </div>
+    </td>
+    <td>
+        <button hx-delete="/projects/{{ project_id }}/tasks/{{ task.id }}"
+                hx-target="#task-{{ task.id }}" hx-swap="delete"
+                hx-confirm="Delete task {{ task.id }}?"
+                style="width:auto; margin:0">Delete</button>
     </td>
 </tr>
