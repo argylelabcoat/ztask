@@ -8,6 +8,7 @@
         <li><a href="/projects/{{ project_id }}?filter=all">All</a></li>
         <li><a href="/projects/{{ project_id }}?filter=incomplete">Incomplete</a></li>
         <li><a href="/projects/{{ project_id }}?filter=wip">WIP</a></li>
+        <li><a href="/projects/{{ project_id }}/metrics">Metrics</a></li>
     </ul>
 </nav>
 
@@ -21,7 +22,7 @@
 
 <table>
     <thead>
-        <tr><th>ID</th><th>Status</th><th>Entered by</th><th>Entered</th><th>Actions</th></tr>
+        <tr><th>ID</th><th>Status</th><th>Entered by</th><th>Entered</th><th>Actions</th><th>Delete</th></tr>
     </thead>
     <tbody id="task-list">
         {% for task in tasks %}

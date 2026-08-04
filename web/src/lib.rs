@@ -1,4 +1,5 @@
 pub mod handlers;
+pub mod metrics;
 pub mod models;
 pub mod queries;
 pub mod render;
@@ -31,6 +32,7 @@ pub fn app(state: AppState) -> Router {
         .route("/", get(handlers::dashboard::show))
         .route("/projects", post(handlers::dashboard::create))
         .route("/projects/{id}", get(handlers::project::show))
+        .route("/projects/{id}/metrics", get(handlers::metrics::show))
         .route("/projects/{id}/tasks", post(handlers::project::create))
         .route("/projects/{id}/tasks/{task_id}/status", post(handlers::task::update_status))
         .route("/projects/{id}/tasks/{task_id}/criteria", post(handlers::task::edit_criteria))
