@@ -1,409 +1,268 @@
 # ztask vs GNU GNATS
 
-A comparison of the Zenoh-backed task tracker for LLM agents vs the classic GNU bug tracking system.
-
-## Overview
-
-| Feature | ztask | GNU GNATS |
-|---------|-------|-----------|
-| **Primary audience** | LLM agents & developers | Software projects (bug tracking) |
-| **Storage** | Zenoh keyspace (distributed) | Flat files + index |
-| **Architecture** | Client-server (zenohd router) | Email-based + CLI |
-| **Data model** | Hierarchical key-values | Structured PR (Problem Reports) |
-| **Collaboration** | Multi-agent, multi-user | Email-driven workflow |
-| **Web UI** | Rust (axum + htmx) | Gnatsweb (separate) |
-| **Language** | Python + Rust | C |
-| **First release** | 2026 | 1992 |
-| **Philosophy** | Agent-native, TDD-driven | Email-centric, minimal |
+A factual comparison of CLI commands, data models, and feature mapping.
 
 ## Data Model
 
 ### ztask
 
+Hierarchical key-value pairs stored in Zenoh:
+
 ```
 projects/<project_id>/tasks/<task_id>/
-  status                    # PENDING, IN_PROGRESS, WIP, RUNNING, COMPLETED
-  acceptance_criteria       # Gherkin-style criteria
-  spec                      # Full specification
-  depends_on                # JSON array of task IDs
-  blocks                    # JSON array of task IDs
-  test_files                # JSON array of paths
-  implementation_files      # JSON array of paths
-  tdd_phase                 # red, green, refactor
-  test_command              # Shell command
-  verification_command      # Shell command
-  failure_reason            # Last failure reason
-  attempt_count             # Number of attempts
-  history                   # JSON array of transitions
-  time_entered              # ISO timestamp
-  time_accepted             # ISO timestamp
-  time_completed            # ISO timestamp
-  entered_by                # LLM or USER
+  status                    # PENDING, IN_PROGRESS, WIP, RUNNING, COMPLETED, UNKNOWN
+  acceptance_criteria       # string
+  spec                      # string
+  depends_on                # JSON array of task ID strings
+  blocks                    # JSON array of task ID strings
+  test_files                # JSON array of path strings
+  implementation_files      # JSON array of path strings
+  tdd_phase                 # "red", "green", "refactor", or empty
+  test_command              # string
+  verification_command      # string
+  failure_reason            # string
+  attempt_count             # integer as string
+  history                   # JSON array of {timestamp, from_status, to_status, note}
+  time_entered              # ISO 8601 timestamp
+  time_accepted             # ISO 8601 timestamp
+  time_completed            # ISO 8601 timestamp
+  entered_by                # "LLM" or "USER"
 ```
 
 ### GNU GNATS
 
+Structured text records in flat files:
+
 ```
->Number:          # Auto-incrementing PR number
->Category:        # Component category (e.g., "bash", "gcc")
->Severity:        # critical, serious, non-critical
->Priority:        # high, medium, low
->Responsible:     # Person responsible
->State:           # open, analyzed, suspended, feedback, closed
->Confidential:    # yes/no
->Submitter-Id:    # Submitter identifier
->Arrival-Date:    # When PR was filed
->Originator:      # Full name of submitter
->Release:         # Software release version
->Organization:    # Submitter's organization
->Environment:     # System environment description
->Description:     # Full problem description
->How-To-Repeat:   # Steps to reproduce
->Fix:             # Fix description (if available
+>Number:          # auto-incrementing integer
+>Category:        # string (e.g., "bash", "gcc", "libc")
+>Severity:        # "critical", "serious", "non-critical"
+>Priority:        # "high", "medium", "low"
+>Responsible:     # string (person or team)
+>State:           # "open", "analyzed", "suspended", "feedback", "closed"
+>Confidential:    # "yes" or "no"
+>Submitter-Id:    # string
+>Arrival-Date:    # date string
+>Originator:      # string (full name)
+>Release:         # string (software version)
+>Organization:    # string
+>Environment:     # string (free-text)
+>Description:     # string (free-text)
+>How-To-Repeat:   # string (free-text)
+>Fix:             # string (free-text)
 ```
 
-## Command Comparison
+## CLI Commands
 
-### Creating Tasks/PRs
+### Creating
 
 **ztask:**
 ```bash
-ztask create auth-login --project myapp \
-  --criteria "Given valid creds, When POST /login, Then return JWT" \
-  --depends-on db-migrations \
-  --test-files tests/test_auth.py \
-  --impl-files src/auth.py \
-  --test-command "pytest tests/test_auth.py"
+ztask create <task-id> --project <id> [--criteria "..."] [--spec "..."] \
+  [--depends-on "id1,id2"] [--test-files "file1,file2"] \
+  [--impl-files "file1,file2"] [--test-command "..."] [--verify-command "..."] \
+  [--entered-by llm|user]
 ```
 
 **GNATS:**
 ```bash
 # Via email
-mail bugs@project.org << EOF
->From: developer@example.org
->Category: auth
->Severity: serious
->Priority: medium
->Responsible: dev-team
->State: open
->Class: sw-bug
->Submitter-Id: net
->Release: 1.0
->Environment: Linux x86_64
->Description: Login endpoint returns 500 on valid credentials
->How-To-Repeat: POST /login with valid JWT
->Fix: (none)
-EOF
+echo ">Category: bash\n>Severity: serious\n>Description: ..." | mail bugs@project.org
 
-# Via CLI
-edit-pr -a 42
+# Via edit-pr
+edit-pr -a <number>
 ```
 
-### Listing Tasks/PRs
+### Querying/Listing
 
 **ztask:**
 ```bash
-ztask list --project myapp                    # all tasks
-ztask list --project myapp --filter incomplete # not completed
-ztask list --project myapp --filter wip       # in progress
+ztask list --project <id> [--filter all|incomplete|wip]
+ztask get <task-id> --project <id>
 ```
 
 **GNATS:**
 ```bash
-query-pr --category auth                      # filter by category
-query-pr --state open                         # filter by state
-query-pr --responsible dev-team               # filter by responsible
-query-pr --full 42                            # full PR details
+query-pr [--category "..."] [--state "..."] [--responsible "..."] [--full <number>]
 ```
 
-### Updating Status
+### Updating
 
 **ztask:**
 ```bash
-ztask update-status auth-login IN_PROGRESS --project myapp --note "Starting implementation"
-ztask update-status auth-login COMPLETED --project myapp --note "All tests pass"
+ztask update-status <task-id> <status> --project <id> [--note "..."]
 ```
 
 **GNATS:**
 ```bash
 # Via email reply
-mail bugs@project.org << EOF
->From: developer@example.org
->Number: 42
->State: analyzed
->Responsible: dev-team
->Fix: Implemented JWT validation
-EOF
+echo ">Number: 42\n>State: analyzed\n>Fix: ..." | mail bugs@project.org
 
-# Via CLI
+# Via edit-pr
 edit-pr 42
 ```
 
-### Viewing Details
+### Deleting
 
 **ztask:**
 ```bash
-ztask get auth-login --project myapp
+# No delete command; tasks are marked COMPLETED
 ```
 
 **GNATS:**
 ```bash
-query-pr --full 42
-cat /var/gnats/db/category/42
+# PRs are closed via state change, not deleted
 ```
 
-## Unique Features
+## Feature Mapping
 
-### ztask Only
+| ztask feature | GNATS equivalent | Notes |
+|---------------|------------------|-------|
+| `status` | `>State:` | ztask has 6 states; GNATS has 5 |
+| `acceptance_criteria` | (none) | ztask-specific for TDD/BDD |
+| `spec` | (none) | ztask-specific for spec-driven dev |
+| `depends_on` | (none) | ztask has dependency tracking |
+| `blocks` | (none) | ztask has dependency tracking |
+| `test_files` | (none) | ztask tracks test file paths |
+| `implementation_files` | (none) | ztask tracks implementation files |
+| `tdd_phase` | (none) | ztask tracks TDD lifecycle |
+| `test_command` | (none) | ztask stores test commands |
+| `verification_command` | (none) | ztask stores verification commands |
+| `failure_reason` | (none) | ztask tracks failure reasons |
+| `attempt_count` | (none) | ztask tracks retry attempts |
+| `history` | (none) | ztask logs all transitions |
+| `time_entered` | `>Arrival-Date:` | Both track creation time |
+| `time_accepted` | (none) | ztask tracks when work starts |
+| `time_completed` | (none) | ztask tracks completion time |
+| `entered_by` | `>Submitter-Id:` | ztask: LLM/USER; GNATS: string |
+| (none) | `>Category:` | GNATS categorizes by component |
+| (none) | `>Severity:` | GNATS has severity levels |
+| (none) | `>Priority:` | GNATS has priority levels |
+| (none) | `>Responsible:` | GNATS assigns responsibility |
+| (none) | `>Confidential:` | GNATS supports private PRs |
+| (none) | `>Environment:` | GNATS captures system info |
+| (none) | `>How-To-Repeat:` | GNATS stores reproduction steps |
 
-| Feature | Description |
-|---------|-------------|
-| **Acceptance criteria** | Gherkin-style criteria for TDD/BDD |
-| **Spec field** | Full specification context |
-| **Dependency tracking** | `depends_on` and `blocks` with cycle detection |
-| **TDD phase tracking** | red/green/refactor lifecycle |
-| **Test/impl file tracking** | Knows which files belong to a task |
-| **Test/verify commands** | How to run tests and verify |
-| **Failure tracking** | `failure_reason` and `attempt_count` |
-| **Multi-agent support** | Concurrent agents with status locking |
-| **Web UI** | Rust axum + htmx admin interface |
-| **OpenSpec integration** | Spec-driven development workflow |
-| **BDD feature files** | Auto-generated from acceptance criteria |
-| **Orchestrator** | Automated sub-agent orchestration |
-| **Spec management** | Merge, organize, archive specs |
+## Storage Architecture
 
-### GNATS Only
+**ztask:**
+- Zenoh router (`zenohd`) with Garry storage backend
+- Hierarchical key-value pairs
+- Distributed access via Zenoh protocol
+- Persistent volume for data
 
-| Feature | Description |
-|---------|-------------|
-| **Email-based workflow** | Submit/update PRs via email |
-| **Mail interfaces** | `gnatsd` daemon for mail processing |
-| **Audit trail** | Immutable email-based history |
-| **Category system** | Hierarchical component categories |
-| **Severity levels** | Critical/serious/non-critical |
-| **Confidential PRs** | Private bug reports |
-| **Responsible assignment** | Automatic routing by category |
-| **Query language** | Structured query syntax |
-| **Emacs integration** | `gnats.el` for Emacs users |
-| **CVS/SVN integration** | Version control hooks |
-| **Auto-reply** | Automatic acknowledgment emails |
-| **PR database** | Flat-file database with index |
+**GNATS:**
+- Flat files in `/var/gnats/db/<category>/`
+- One file per PR, numbered sequentially
+- Index file for fast lookups
+- Direct filesystem access
 
-## Architecture Comparison
+## Access Protocol
 
-### ztask
+**ztask:**
+- CLI connects via Zenoh protocol (`tcp/localhost:7447`)
+- Web UI connects via HTTP (`localhost:8080`)
+- Remote access via Zenoh routing
 
+**GNATS:**
+- CLI reads/writes flat files directly
+- Email submission via SMTP
+- `gnatsd` daemon processes email
+- Gnatsweb provides HTTP interface
+
+## Concurrency
+
+**ztask:**
+- Multiple agents can operate simultaneously
+- Status locking via Zenoh's eventual consistency
+- First agent to set IN_PROGRESS wins
+
+**GNATS:**
+- File-level locking for writes
+- Single-user editing at a time
+- Email queue handles concurrent submissions
+
+## Output Formats
+
+**ztask:**
+- JSON (all commands)
+- Human-readable (web UI)
+
+**GNATS:**
+- Structured text (query-pr)
+- Email (notifications)
+- Gnatsweb (HTML)
+
+## Environment Variables
+
+**ztask:**
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  LLM Agent      │     │  ztask CLI      │     │  zenohd router  │
-│  (sub-agent)    │────▶│  (Python)       │────▶│  + Garry        │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │                        │
-                               ▼                        ▼
-                        ┌─────────────────┐     ┌─────────────────┐
-                        │  ztask-web      │     │  Storage        │
-                        │  (Rust/htmx)    │     │  (persistent)   │
-                        └─────────────────┘     └─────────────────┘
-```
-
-### GNATS
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  User           │────▶│  Email Client   │────▶│  SMTP Server    │
-│                 │     │                 │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │                        │
-                               ▼                        ▼
-                        ┌─────────────────┐     ┌─────────────────┐
-                        │  gnatsd daemon  │     │  GNATS Database │
-│  (mail handler) │     │  (flat files)   │
-                        └─────────────────┘     └─────────────────┘
-```
-
-## Use Case Comparison
-
-### ztask is better for:
-
-| Use Case | Why |
-|----------|-----|
-| **LLM agent orchestration** | Designed for autonomous agents |
-| **TDD/BDD workflows** | Built-in phase tracking and test integration |
-| **Multi-agent collaboration** | Status locking, dependency resolution |
-| **Spec-driven development** | OpenSpec integration, acceptance criteria |
-| **Complex dependencies** | Cycle detection, topological sort |
-| **Modern workflows** | REST-like CLI, JSON output |
-| **Real-time monitoring** | Web UI with live updates |
-| **Automated testing** | Test commands and verification |
-
-### GNATS is better for:
-
-| Use Case | Why |
-|----------|-----|
-| **Legacy projects** | 30+ years of maturity |
-| **Email-centric teams** | Native email workflow |
-| **Minimal infrastructure** | No server required |
-| **Regulatory compliance** | Immutable audit trail |
-| **Simple bug tracking** | Lightweight, focused |
-| **Unix philosophy** | Small, composable tools |
-| **Offline workflows** | Email queuing support |
-| **Existing GNATS users** | Migration-free |
-
-## Data Portability
-
-### ztask
-
-- **Export**: JSON via `ztask list --filter all`
-- **Import**: `ztask create` with all fields
-- **Zenoh protocol**: Native wire format
-- **Web UI**: Human-readable via browser
-
-### GNATS
-
-- **Export**: Flat files, query output
-- **Import**: Email-based submission
-- **Database**: Human-readable text files
-- **Backup**: File system copy
-
-## Performance
-
-| Metric | ztask | GNATS |
-|--------|-------|-------|
-| **Startup time** | ~100ms (Zenoh session) | ~10ms |
-| **List 1000 PRs** | ~200ms (network) | ~500ms (file scan) |
-| **Create task** | ~50ms (network) | ~200ms (email) |
-| **Storage size** | Zenoh keyspace | Flat files |
-| **Memory usage** | ~50MB (router) | ~1MB |
-| **Concurrent users** | Unlimited (distributed) | Limited (file locks) |
-
-## Integration Ecosystem
-
-### ztask
-
-- **MiMoCode**: Native skill integration
-- **Claude Code**: Skill-compatible
-- **OpenAI Codex**: Skill-compatible
-- **Custom agents**: CLI-based integration
-- **Web UI**: Browser-based monitoring
-- **OpenSpec**: Spec-driven development
-
-### GNATS
-
-- **Emacs**: gnats.el
-- **CVS/SVN**: Commit hooks
-- **Email**: SMTP integration
-- **Gnatsweb**: Web interface
-- **Perl**: GNATS API
-- **Shell**: CLI tools
-
-## Workflow Comparison
-
-### ztask: Agent-Driven Development
-
-```
-1. Write OpenSpec (specs/tasks/*.md)
-2. Ingest: ztask-ingest myproject specs/
-3. Orchestrate: /ztask-orchestrator myproject
-4. Sub-agents execute tasks (TDD cycle)
-5. Merge specs: /ztask-spec-merge
-6. Archive: /ztask-spec-organize archive
+ZTASK_ZENOH_ENDPOINT    # default: tcp/localhost:7447
 ```
 
-### GNATS: Email-Based Bug Tracking
-
+**GNATS:**
 ```
-1. User reports bug via email
-2. gnatsd processes email, creates PR
-3. Developer queries PRs, assigns to self
-4. Developer fixes bug, replies to email
-5. PR updated via email
-6. Tester verifies, closes PR via email
+GNATS_ADDR              # gnatsd address
+GNATS_ADMIN             # admin email
+GNATS_DEFAULT_CATEGORY  # default category
+GNATS_DEFAULT_SEVERITY  # default severity
+GNATS_DEFAULT_PRIORITY  # default priority
 ```
 
-## Modernization Path
+## Feature Parity Gaps
 
-### GNATS → ztask Migration
+### ztask has, GNATS lacks
 
-For projects moving from GNATS to ztask:
+1. **Dependency tracking** — `depends_on`/`blocks` with cycle detection
+2. **TDD phase tracking** — red/green/refactor lifecycle
+3. **Acceptance criteria** — Gherkin-style criteria
+4. **Spec field** — full specification context
+5. **Test/impl file tracking** — which files belong to a task
+6. **Test/verify commands** — how to run tests
+7. **Failure tracking** — `failure_reason` and `attempt_count`
+8. **Multi-agent orchestration** — sub-agent spawning
+9. **Web UI** — built-in Rust web interface
+10. **OpenSpec integration** — spec-driven workflow
 
-```bash
-# Export GNATS PRs
-query-pr --format json > gnats-export.json
+### GNATS has, ztask lacks
 
-# Convert to ztask format
-python convert-gnats-to-ztask.py gnats-export.json > ztask-import.json
+1. **Category system** — hierarchical component categorization
+2. **Severity levels** — critical/serious/non-critical
+3. **Priority levels** — high/medium/low
+4. **Confidential PRs** — private bug reports
+5. **Responsible assignment** — automatic routing by category
+6. **Email workflow** — native email submission/notification
+7. **Environment capture** — system information field
+8. **Reproduction steps** — how-to-repeat field
+9. **Emacs integration** — gnats.el
+10. **CVS/SVN hooks** — version control integration
 
-# Import into ztask
-ztask import --project myproject ztask-import.json
-```
+## Mapping ztask to GNATS
 
-### ztask GNATS Compatibility
+To replicate ztask features in GNATS:
 
-For projects needing both:
+| ztask | GNATS approach |
+|-------|----------------|
+| `depends_on` | Use `>Description:` to list dependencies manually |
+| `tdd_phase` | Use `>State:` or custom annotations |
+| `acceptance_criteria` | Include in `>Description:` |
+| `test_files` | Include in `>Description:` or `>How-To-Repeat:` |
+| `failure_reason` | Use `>Fix:` field or annotations |
+| `attempt_count` | Track manually via annotations |
+| `history` | GNATS logs all email changes automatically |
+| Web UI | Use Gnatsweb (separate project) |
 
-```bash
-# Export ztask tasks to GNATS format
-ztask list --project myapp --filter all | \
-  python convert-ztask-to-gnats.py > gnats-import.txt
+## Mapping GNATS to ztask
 
-# Import into GNATS
-cat gnats-import.txt | mail bugs@project.org
-```
+To replicate GNATS features in ztask:
 
-## When to Choose
-
-### Choose ztask when:
-
-- Building LLM agent workflows
-- Need TDD/BDD integration
-- Multi-agent collaboration required
-- Complex task dependencies
-- Spec-driven development
-- Need web UI for monitoring
-- Want automated orchestration
-
-### Choose GNATS when:
-
-- Legacy project maintenance
-- Email-centric team workflow
-- Minimal infrastructure budget
-- Regulatory audit requirements
-- Simple bug tracking needs
-- Unix philosophy preferred
-- Offline-first workflow
-
-## Hybrid Approach
-
-Use both for different purposes:
-
-```bash
-# ztask for agent-driven development
-ztask create implement-auth --project myapp --criteria "..."
-
-# GNATS for human-reported bugs
-mail bugs@project.org << EOF
->Category: auth
->Severity: serious
->Description: Login fails on Safari
-EOF
-
-# Sync via export/import
-ztask list --project myapp --filter all | \
-  python sync-to-gnats.py | mail bugs@project.org
-```
-
-## Summary
-
-| Aspect | ztask | GNU GNATS |
-|--------|-------|-----------|
-| **Best for** | LLM agents, TDD, automation | Legacy, email, minimal |
-| **Complexity** | Higher (server, agents) | Lower (flat files) |
-| **Learning curve** | Moderate | Low |
-| **Maturity** | New (2026) | 30+ years (1992) |
-| **Community** | Niche | Legacy |
-| **Extensibility** | Skills, MCP | Email, scripts |
-| **Philosophy** | Agent-native | Unix/email-centric |
-
-**ztask** is purpose-built for the LLM agent era — designed for autonomous sub-agents, TDD workflows, and spec-driven development. **GNU GNATS** is the classic Unix bug tracker that's been refined over 30+ years with an email-centric philosophy.
-
-Choose based on your primary use case: agents → ztask, legacy/email → GNATS, both → hybrid.
+| GNATS | ztask approach |
+|-------|----------------|
+| `>Category:` | Use project ID or task ID prefix |
+| `>Severity:` | Use `acceptance_criteria` or `spec` to indicate severity |
+| `>Priority:` | Not supported; use task ordering |
+| `>Responsible:` | Use `entered_by` or task naming convention |
+| `>Confidential:` | Not supported; use separate project |
+| `>Environment:` | Include in `spec` field |
+| `>How-To-Repeat:` | Include in `acceptance_criteria` (Gherkin format) |
+| Email workflow | Use CLI or web UI directly |
