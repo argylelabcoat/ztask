@@ -162,6 +162,47 @@ pub fn compute_timing_table(
     result
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct VelocityPoint {
+    pub date: String,
+    pub completions: usize,
+    pub height_pct: u32,
+}
+
+pub fn compute_velocity(tasks: &HashMap<String, Task>) -> Vec<VelocityPoint> {
+    let mut earliest: Option<chrono::NaiveDate> = None;
+    let mut completions_by_date: HashMap<chrono::NaiveDate, usize> = HashMap::new();
+
+    for task in tasks.values() {
+        for entry in &task.history {
+            let Some(dt) = parse_timestamp(&entry.timestamp) else { continue };
+            let date = dt.date_naive();
+            earliest = Some(earliest.map_or(date, |e| e.min(date)));
+            if entry.to_status.to_uppercase() == TERMINAL_STATUS {
+                *completions_by_date.entry(date).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let Some(start) = earliest else { return Vec::new() };
+    let today = chrono::Utc::now().date_naive();
+
+    let mut raw: Vec<(String, usize)> = Vec::new();
+    let mut day = start;
+    while day <= today {
+        raw.push((day.format("%Y-%m-%d").to_string(), completions_by_date.get(&day).copied().unwrap_or(0)));
+        day += chrono::Duration::days(1);
+    }
+
+    let max = raw.iter().map(|(_, c)| *c).max().unwrap_or(0);
+    raw.into_iter()
+        .map(|(date, completions)| {
+            let height_pct = if max == 0 { 0 } else { ((completions as f64 / max as f64) * 100.0).round() as u32 };
+            VelocityPoint { date, completions, height_pct }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,5 +394,39 @@ mod tests {
         assert_eq!(format_duration(chrono::Duration::minutes(45)), "45m");
         assert_eq!(format_duration(chrono::Duration::minutes(135)), "2h 15m");
         assert_eq!(format_duration(chrono::Duration::hours(27)), "1d 3h");
+    }
+
+    #[test]
+    fn compute_velocity_counts_completions_per_day_and_zero_fills() {
+        let mut task = Task::new("t1");
+        task.history = vec![
+            history_entry("2026-08-01T00:00:00+00:00", "NONE", "PENDING"),
+            history_entry("2026-08-03T00:00:00+00:00", "IN_PROGRESS", "COMPLETED"),
+        ];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), task);
+
+        // "today" is real Utc::now() inside compute_velocity, so this only checks
+        // the deterministic prefix of the series (from the earliest history entry
+        // through the fixture's last entry) — later, real-time-dependent entries
+        // aren't asserted.
+        let velocity = compute_velocity(&tasks);
+
+        assert!(velocity.len() >= 3);
+        assert_eq!(velocity[0].date, "2026-08-01");
+        assert_eq!(velocity[0].completions, 0);
+        assert_eq!(velocity[0].height_pct, 0);
+        assert_eq!(velocity[1].date, "2026-08-02");
+        assert_eq!(velocity[1].completions, 0);
+        assert_eq!(velocity[2].date, "2026-08-03");
+        assert_eq!(velocity[2].completions, 1);
+        assert_eq!(velocity[2].height_pct, 100);
+    }
+
+    #[test]
+    fn compute_velocity_empty_when_no_history() {
+        let tasks: HashMap<String, Task> = HashMap::new();
+        assert!(compute_velocity(&tasks).is_empty());
     }
 }
