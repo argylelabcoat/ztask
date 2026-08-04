@@ -175,3 +175,115 @@ def test_update_status_missing_task_exits_with_error(mocker):
     assert result.exit_code == 1
     assert "not found" in result.stdout + (result.stderr or "")
     assert session.put_calls == []
+
+
+def test_create_with_spec_flag(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--spec", "Full design spec here"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/spec"] == "Full design spec here"
+
+
+def test_create_with_depends_on_flag(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--depends-on", "t0,t2"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert json.loads(keys["projects/p1/tasks/t1/depends_on"]) == ["t0", "t2"]
+
+
+def test_create_with_test_files_flag(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--test-files", "tests/test_a.py,tests/test_b.py"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert json.loads(keys["projects/p1/tasks/t1/test_files"]) == ["tests/test_a.py", "tests/test_b.py"]
+
+
+def test_create_with_impl_files_flag(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--impl-files", "src/a.py,src/b.py"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert json.loads(keys["projects/p1/tasks/t1/implementation_files"]) == ["src/a.py", "src/b.py"]
+
+
+def test_create_with_test_command_flag(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--test-command", "pytest tests/ -v"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/test_command"] == "pytest tests/ -v"
+
+
+def test_create_with_verify_command_flag(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--verify-command", "scripts/verify.sh"])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert keys["projects/p1/tasks/t1/verification_command"] == "scripts/verify.sh"
+
+
+def test_create_duplicate_task_exits_with_error(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.fetch_task", return_value=Task(id="t1", status="PENDING"))
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1"])
+
+    assert result.exit_code == 1
+    assert "already exists" in result.stdout + (result.stderr or "")
+    assert session.put_calls == []
+
+
+def test_create_empty_depends_on_not_stored(mocker):
+    from tests.unit.fakes import FakeSession
+
+    session = FakeSession({})
+    mocker.patch("ztask.cli.open_session").return_value.__enter__.return_value = session
+    mocker.patch("ztask.cli.get_iso_timestamp", return_value="2026-07-31T00:00:00+00:00")
+
+    result = runner.invoke(app, ["create", "--project", "p1", "t1", "--depends-on", ""])
+
+    assert result.exit_code == 0
+    keys = dict(session.put_calls)
+    assert "projects/p1/tasks/t1/depends_on" not in keys

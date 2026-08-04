@@ -19,6 +19,41 @@ fn apply_field(task: &mut Task, field_name: &str, value: &str) {
                 task.history.push(entry);
             }
         }
+        // SDD fields
+        "spec" => task.spec = Some(value.to_string()),
+        "depends_on" => {
+            task.depends_on = serde_json::from_str(value)
+                .unwrap_or_else(|_| {
+                    value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                });
+        }
+        "blocks" => {
+            task.blocks = serde_json::from_str(value)
+                .unwrap_or_else(|_| {
+                    value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                });
+        }
+        // TDD fields
+        "test_files" => {
+            task.test_files = serde_json::from_str(value)
+                .unwrap_or_else(|_| {
+                    value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                });
+        }
+        "implementation_files" => {
+            task.implementation_files = serde_json::from_str(value)
+                .unwrap_or_else(|_| {
+                    value.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+                });
+        }
+        "tdd_phase" => task.tdd_phase = Some(value.to_string()),
+        "test_command" => task.test_command = Some(value.to_string()),
+        "verification_command" => task.verification_command = Some(value.to_string()),
+        // Execution metadata
+        "failure_reason" => task.failure_reason = Some(value.to_string()),
+        "attempt_count" => {
+            task.attempt_count = value.parse().unwrap_or(0);
+        }
         _ => {}
     }
 }
@@ -213,6 +248,36 @@ mod tests {
         assert_eq!(tasks["t1"].entered_by.as_deref(), Some("LLM"));
         assert_eq!(tasks["t1"].history.len(), 1);
         assert_eq!(tasks["t2"].status, "COMPLETED");
+    }
+
+    #[tokio::test]
+    async fn fetch_all_tasks_parses_sdd_tdd_fields() {
+        let store = FakeStore::new()
+            .seed("projects/p1/tasks/t1/status", "IN_PROGRESS")
+            .seed("projects/p1/tasks/t1/spec", "# Spec\n- item 1")
+            .seed("projects/p1/tasks/t1/depends_on", r#"["t0","t2"]"#)
+            .seed("projects/p1/tasks/t1/blocks", r#"["t3"]"#)
+            .seed("projects/p1/tasks/t1/test_files", r#"["src/test.rs"]"#)
+            .seed("projects/p1/tasks/t1/implementation_files", r#"["src/lib.rs"]"#)
+            .seed("projects/p1/tasks/t1/tdd_phase", "RED")
+            .seed("projects/p1/tasks/t1/test_command", "cargo test")
+            .seed("projects/p1/tasks/t1/verification_command", "cargo clippy")
+            .seed("projects/p1/tasks/t1/failure_reason", "compile error")
+            .seed("projects/p1/tasks/t1/attempt_count", "3");
+
+        let tasks = fetch_all_tasks(&store, "p1").await;
+        let task = &tasks["t1"];
+
+        assert_eq!(task.spec.as_deref(), Some("# Spec\n- item 1"));
+        assert_eq!(task.depends_on, vec!["t0", "t2"]);
+        assert_eq!(task.blocks, vec!["t3"]);
+        assert_eq!(task.test_files, vec!["src/test.rs"]);
+        assert_eq!(task.implementation_files, vec!["src/lib.rs"]);
+        assert_eq!(task.tdd_phase.as_deref(), Some("RED"));
+        assert_eq!(task.test_command.as_deref(), Some("cargo test"));
+        assert_eq!(task.verification_command.as_deref(), Some("cargo clippy"));
+        assert_eq!(task.failure_reason.as_deref(), Some("compile error"));
+        assert_eq!(task.attempt_count, 3);
     }
 
     #[tokio::test]

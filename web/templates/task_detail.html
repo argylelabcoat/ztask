@@ -12,6 +12,19 @@
         <tr><th>Time accepted</th><td>{{ task.time_accepted.as_deref().unwrap_or("-") }}</td></tr>
         <tr><th>Time completed</th><td>{{ task.time_completed.as_deref().unwrap_or("-") }}</td></tr>
         <tr><th>Acceptance criteria</th><td>{{ task.acceptance_criteria.as_deref().unwrap_or("-") }}</td></tr>
+        <!-- SDD fields -->
+        <tr><th>Spec</th><td>{{ task.spec.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Depends on</th><td>{{ task.depends_on.join(", ") }}</td></tr>
+        <tr><th>Blocks</th><td>{{ task.blocks.join(", ") }}</td></tr>
+        <!-- TDD fields -->
+        <tr><th>TDD phase</th><td>{{ task.tdd_phase.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Test files</th><td>{{ task.test_files.join(", ") }}</td></tr>
+        <tr><th>Implementation files</th><td>{{ task.implementation_files.join(", ") }}</td></tr>
+        <tr><th>Test command</th><td>{{ task.test_command.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Verification command</th><td>{{ task.verification_command.as_deref().unwrap_or("-") }}</td></tr>
+        <!-- Execution metadata -->
+        <tr><th>Failure reason</th><td>{{ task.failure_reason.as_deref().unwrap_or("-") }}</td></tr>
+        <tr><th>Attempt count</th><td>{{ task.attempt_count }}</td></tr>
     </tbody>
 </table>
 
