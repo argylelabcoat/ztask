@@ -22,11 +22,11 @@
 <table>
     <thead>
         <tr>
-            <th><a href="{{ sort_name_href }}">Project{% if active_sort == "name" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
-            <th><a href="{{ sort_total_href }}">Total{% if active_sort == "total" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
-            <th><a href="{{ sort_incomplete_href }}">Incomplete{% if active_sort == "incomplete" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
-            <th><a href="{{ sort_wip_href }}">WIP{% if active_sort == "wip" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
-            <th><a href="{{ sort_activity_href }}">Activity{% if active_sort == "activity" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
+            <th><a href="{{ sort_name_href }}">Project {% if active_sort == "name" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
+            <th><a href="{{ sort_total_href }}">Total {% if active_sort == "total" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
+            <th><a href="{{ sort_incomplete_href }}">Incomplete {% if active_sort == "incomplete" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
+            <th><a href="{{ sort_wip_href }}">WIP {% if active_sort == "wip" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
+            <th><a href="{{ sort_activity_href }}">Activity {% if active_sort == "activity" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
         </tr>
     </thead>
     <tbody>
