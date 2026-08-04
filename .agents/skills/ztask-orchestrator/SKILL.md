@@ -146,13 +146,60 @@ After a batch of sub-agents completes:
 3. Spawn workers for newly-ready tasks
 4. Repeat until no more ready tasks
 
-### Step 7: Report
+### Step 7: Post-completion spec management
+
+After all tasks complete (or at key milestones), run spec management:
+
+#### 7a: Merge completed update specs
+
+If the project was an update spec (e.g., `sdd-tdd-extension`), merge changes into the feature spec:
+
+```
+/ztask-spec-merge <feature-name> <update-spec-path>
+```
+
+This will:
+- Extract implementation details from completed tasks
+- Update the feature spec with new content
+- Add changelog entry
+- Convert acceptance criteria to Gherkin format
+- Identify BDD testing opportunities
+
+#### 7b: Organize specs
+
+Run spec organization to ensure clean structure:
+
+```
+/ztask-spec-organize audit
+```
+
+This will:
+- Check directory structure
+- Validate naming conventions
+- Update cross-references
+- Report any issues
+
+#### 7c: Archive completed specs
+
+If the update spec is fully implemented, archive it:
+
+```
+/ztask-spec-organize archive
+```
+
+This will:
+- Move completed update specs to `openspec/archive/`
+- Create archive index
+- Clean up the specs directory
+
+### Step 8: Report
 
 After all tasks reach a terminal state or the queue is stuck:
 - Summarize: N completed, M blocked, K failed
 - For blocked/failed tasks, show `failure_reason` and `attempt_count`
 - If any failed 2+ times, ask the user: retry, skip, or intervene
 - If all completed, report project done
+- Report spec management actions taken
 
 ## Concurrency Notes
 
@@ -169,6 +216,7 @@ Stop and ask the user when:
 - The acceptance criteria reference external systems not available
 - More than 50% of tasks are failing (systemic issue)
 - A task has been IN_PROGRESS for > 24 hours (stalled)
+- Spec merge/organize reports errors
 
 ## TDD Phase Tracking
 
@@ -197,4 +245,56 @@ Execution order:
   Round 1: [db-migrations]        ← no dependencies
   Round 2: [auth-login]           ← db-migrations completed
   Round 3: [auth-refresh, auth-logout]  ← auth-login completed (parallel)
+```
+
+## Spec Management Integration
+
+The orchestrator integrates with spec management skills to maintain clean specifications:
+
+### After each task completes
+- No immediate action (tasks are independent)
+
+### After all tasks in a batch complete
+- Run `/ztask-spec-organize audit` to check organization
+- Report any issues found
+
+### After all tasks in a project complete
+- Run `/ztask-spec-merge` to merge update spec into feature spec
+- Run `/ztask-spec-organize archive` to archive completed specs
+- Report spec management actions
+
+### Spec management error handling
+- If spec merge fails: warn but don't block project completion
+- If spec organize fails: warn but don't block project completion
+- If archive fails: warn but don't block project completion
+- Report all spec management issues in final summary
+
+## Example: Full Workflow
+
+```
+1. User: /ztask-orchestrator sdd-tdd-extension
+
+2. Orchestrator:
+   - Fetches 4 tasks from sdd-tdd-extension project
+   - Resolves dependencies: extend-python-model first, then 3 parallel
+   - Spawns sub-agent for extend-python-model
+   - Waits for completion
+   - Spawns 3 sub-agents in parallel (update-cli, update-queries, update-web-model)
+   - Waits for all to complete
+   - All 4 tasks COMPLETED
+
+3. Post-completion:
+   - Runs /ztask-spec-merge task-model openspec/specs/sdd-tdd-extension/
+   - Merges changes into openspec/specs/cli/task-model.md
+   - Adds changelog entry
+   - Runs /ztask-spec-organize audit
+   - Reports: "Spec organization: ✓ All checks pass"
+   - Runs /ztask-spec-organize archive
+   - Archives sdd-tdd-extension/ to openspec/archive/2026-08-04-sdd-tdd-extension/
+
+4. Final report:
+   "Project sdd-tdd-extension complete.
+    4 tasks completed, 0 blocked, 0 failed.
+    Spec merged into cli/task-model.md.
+    Update spec archived."
 ```
