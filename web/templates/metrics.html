@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ project_id }} metrics — Zenoh Tasks{% endblock %}
+{% block content %}
+<h1>{{ project_id }} — Metrics</h1>
+
+<nav>
+    <ul>
+        <li><a href="/projects/{{ project_id }}">Back to tasks</a></li>
+    </ul>
+</nav>
+
+<h2>Status breakdown</h2>
+{% if donut_segments.is_empty() %}
+<p>No tasks yet.</p>
+{% else %}
+<div style="display:flex; align-items:center; gap:1.5rem">
+    <svg viewBox="0 0 100 100" width="160" height="160">
+        <circle cx="50" cy="50" r="40" fill="none" stroke="#e0e0e0" stroke-width="16" />
+        {% for seg in donut_segments %}
+        <circle cx="50" cy="50" r="40" fill="none" stroke="{{ seg.color }}" stroke-width="16"
+                stroke-dasharray="{{ seg.dasharray }}" stroke-dashoffset="{{ seg.dashoffset }}"
+                transform="rotate(-90 50 50)" />
+        {% endfor %}
+    </svg>
+    <ul>
+        {% for seg in donut_segments %}
+        <li><span style="color:{{ seg.color }}">&#9679;</span> {{ seg.label }}: {{ seg.count }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<h2>Stuck / churning tasks</h2>
+{% if flagged.is_empty() %}
+<p>None flagged.</p>
+{% else %}
+<table>
+    <thead><tr><th>ID</th><th>Status</th><th>Stuck</th><th>Churning</th><th>Current status duration</th><th>Transitions</th></tr></thead>
+    <tbody>
+        {% for t in flagged %}
+        <tr>
+            <td><a href="/projects/{{ project_id }}/tasks/{{ t.id }}">{{ t.id }}</a></td>
+            <td>{{ t.status }}</td>
+            <td>{% if t.stuck %}yes{% else %}-{% endif %}</td>
+            <td>{% if t.churning %}yes{% else %}-{% endif %}</td>
+            <td>{{ t.current_status_duration }}</td>
+            <td>{{ t.transition_count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h2>Velocity (completions per day)</h2>
+{% if velocity.is_empty() %}
+<p>No history yet.</p>
+{% else %}
+<div style="display:flex; align-items:flex-end; gap:2px; overflow-x:auto; height:120px; border:1px solid #ddd; padding:0.5rem">
+    {% for point in velocity %}
+    <div title="{{ point.date }}: {{ point.completions }}" style="width:10px; flex-shrink:0; background:#1565c0; height:{{ point.height_pct }}%"></div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<h2>Transition matrix</h2>
+{% if matrix.statuses.is_empty() %}
+<p>No history yet.</p>
+{% else %}
+<table>
+    <thead>
+        <tr>
+            <th>from \ to</th>
+            {% for status in matrix.statuses %}
+            <th>{{ status }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for (row_idx, row) in matrix.counts.iter().enumerate() %}
+        <tr>
+            <th>{{ matrix.statuses[row_idx] }}</th>
+            {% for (col_idx, count) in row.iter().enumerate() %}
+            <td style="{{ matrix.cell_styles[row_idx][col_idx] }}">{{ count }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h2>Task timing</h2>
+{% if timings.is_empty() %}
+<p>No tasks yet.</p>
+{% else %}
+<table>
+    <thead><tr><th>ID</th><th>Status</th><th>Queued</th><th>Work</th><th>Current status</th><th>Transitions</th></tr></thead>
+    <tbody>
+        {% for t in timings %}
+        <tr>
+            <td><a href="/projects/{{ project_id }}/tasks/{{ t.id }}">{{ t.id }}</a></td>
+            <td>{{ t.status }}</td>
+            <td>{{ t.queued_duration.as_deref().unwrap_or("-") }}</td>
+            <td>{{ t.work_duration.as_deref().unwrap_or("-") }}</td>
+            <td>{{ t.current_status_duration }}</td>
+            <td>{{ t.transition_count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
