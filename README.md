@@ -61,6 +61,7 @@ ln -sf ../../.agents/skills .claude/skills
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
+| `ztask-ingest` | `/ztask-ingest <project-id> <spec-dir>` | Convert OpenSpec SDD directory into task graph |
 | `ztask-orchestrator` | `/ztask-orchestrator <project-id>` | Fetch all incomplete tasks, spawn a sub-agent per task, drive to completion |
 | `ztask-worker` | (embedded in sub-agent prompts) | Single-task lifecycle: claim → execute (TDD) → finalize |
 | `ztask-status` | `/ztask-status <project-id>` | Project dashboard — task counts, stalled flags, overview |
@@ -185,5 +186,10 @@ docker/web/        web UI image
 scripts/up.sh      brings up router + web UI on a shared network
 tests/             CLI unit + integration tests
 docs/superpowers/  design specs and implementation plans
-.agents/skills/    LLM agent skills (orchestrator, worker, status)
+openspec/          specs, plans, and guides for spec-driven development
+.agents/skills/    LLM agent skills (ingest, orchestrator, worker, status)
 ```
+
+## Guides
+
+- [Ingest → Implementation Workflow](openspec/guides/ingest-to-implementation.md) — how to use OpenSpec specs and ztask-ingest to drive autonomous implementation with LLM sub-agents.
