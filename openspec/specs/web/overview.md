@@ -4,13 +4,19 @@ Rust (axum + askama + htmx) admin web UI for humans.
 
 ## Overview
 
-A web UI that talks to the Zenoh router directly over the official zenoh Rust SDK — no CLI shell-out. Provides an all-projects dashboard — sortable, with inline project creation — a per-project dashboard with inline create/update-status/edit-criteria/delete, and a per-project metrics dashboard.
+A web UI that talks to the Zenoh router directly over the official zenoh Rust SDK — no CLI shell-out. Provides an all-projects dashboard — sortable, with inline project creation — a per-project dashboard with inline task creation and delete, and a per-project metrics dashboard.
 
-In the per-project task table, Delete is its own trailing column, separate from the Update/Save actions — keeps a destructive action visually isolated from non-destructive ones.
+In the per-project task table, Delete is its own trailing column, separate from the other actions. Editing a task (status, acceptance criteria, and a handful of the SDD/TDD fields) happens in a modal dialog opened from an "Edit" button — there is no inline per-field edit form in the row.
 
 Defaults task creation to `entered_by: USER`.
 
 A project has no standalone entity or marker key — its existence is fully derived from its tasks. Creating a project from the dashboard is creating the first task under a project ID that has no existing tasks.
+
+## Non-goals (this pass)
+
+- Syntax highlighting or linting for the acceptance-criteria editor (Gherkin/Cucumber-aware editing is a planned follow-up once the plain textarea editor exists).
+- A pills/chip-style input for `depends_on`/`blocks` — v1 uses a plain comma-separated text field; chips are a planned follow-up.
+- Editing the TDD-execution fields (`tdd_phase`, `test_files`, `implementation_files`, `test_command`, `verification_command`, `failure_reason`) through the web UI — these stay agent-managed and display-only in `task_detail.html`.
 
 ## Crate Structure
 
@@ -22,7 +28,7 @@ web/
     lib.rs             # app() router, AppState, helpers
     models.rs          # Task, HistoryEntry structs
     queries.rs         # fetch_all_tasks, fetch_task, fetch_all_projects, SortKey/SortDir/sort_projects
-    tasks.rs           # create_task, update_status, edit_criteria, delete_task
+    tasks.rs           # create_task, edit_task, delete_task
     metrics.rs         # pure computation: status breakdown, stuck/churn detection, velocity, transition matrix
     render.rs          # HtmlTemplate wrapper
     zenoh_client.rs    # session management, RealZenohStore
@@ -31,16 +37,19 @@ web/
       mod.rs
       dashboard.rs     # GET / (sortable), POST /projects — all-projects dashboard + project creation
       project.rs       # GET /projects/{id}, POST /projects/{id}/tasks
-      task.rs          # GET/DELETE /projects/{id}/tasks/{task_id}, POST .../status, POST .../criteria
+      task.rs          # GET/DELETE /projects/{id}/tasks/{task_id}, GET/POST .../edit
       metrics.rs       # GET /projects/{id}/metrics — per-project metrics dashboard
-      static_assets.rs # GET /static/style.css, /static/htmx.min.js
+      static_assets.rs # GET /static/style.css, /static/htmx.min.js, /static/line-numbers.js
   templates/
-    base.html
+    base.html          # includes the shared <dialog id="edit-modal">
     dashboard.html
     project.html
     task_row.html
     task_detail.html
+    task_edit.html     # edit-modal form fragment (GET .../edit response)
     metrics.html
+  static/
+    line-numbers.js    # hand-rolled line-number gutter for the criteria textarea (no library)
   tests/
     web_integration.rs # integration tests (real router container)
 ```
@@ -140,16 +149,12 @@ Business logic for task mutations:
   - Writes acceptance_criteria if non-empty
   - Appends history entry
 
-- `update_status(store, project_id, task_id, status, note, now)` → `Result<Task, TaskError>`
+- `edit_task(store, project_id, task_id, status, criteria, spec, depends_on, blocks, note, now)` → `Result<Task, TaskError>` — the single write path behind the edit modal, replacing the former separate `update_status`/`edit_criteria` functions
   - Reads current task (404 if missing)
-  - Updates status
-  - Sets time_accepted (WIP transition) or time_completed (COMPLETED transition)
-  - Appends history entry
-
-- `edit_criteria(store, project_id, task_id, criteria, now)` → `Result<Task, TaskError>`
-  - Reads current task (404 if missing)
-  - Updates acceptance_criteria
-  - Appends history entry ("criteria updated")
+  - Updates status; sets `time_accepted` (WIP transition) or `time_completed` (COMPLETED transition) using the same rules the old `update_status` used
+  - Updates `acceptance_criteria`, `spec` (always writes the given value, including empty-to-clear, matching the former `edit_criteria`'s behavior)
+  - Updates `depends_on`/`blocks`: caller passes already-split `Vec<String>`, written back as a comma-joined string — `queries.rs`'s `apply_field` already falls back to comma-split parsing when a `depends_on`/`blocks` value isn't valid JSON, so no new read-path parsing is needed
+  - Appends one history entry ("edited via modal") regardless of how many fields actually changed
 
 - `delete_task(store, project_id, task_id)`
   - Deletes `projects/{project_id}/tasks/{task_id}/**`
@@ -203,10 +208,10 @@ HTTP handlers using axum extractors:
 - `show()`: fetches all tasks, applies filter (all/incomplete/wip), sorts by ID, renders `project.html`
 - `create()`: validates IDs, creates task, returns `task_row.html` fragment (htmx)
 
-**`task.rs`** — `GET/DELETE /projects/{id}/tasks/{task_id}`, `POST .../status`, `POST .../criteria`
+**`task.rs`** — `GET/DELETE /projects/{id}/tasks/{task_id}`, `GET/POST .../edit`
 - `show()`: fetches single task, renders `task_detail.html`
-- `update_status()`: validates, updates status, returns `task_row.html` fragment
-- `edit_criteria()`: validates, updates criteria, returns `task_row.html` fragment
+- `edit_form()`: validates, fetches the task (404 if missing), renders `task_edit.html` — the modal's form fragment, pre-filled with the task's current editable field values (`depends_on`/`blocks` joined with `, ` for display in their text inputs)
+- `edit()`: validates, parses the combined form (splitting `depends_on`/`blocks` on commas, trimming, dropping empties), calls `tasks::edit_task`, returns the updated `task_row.html` fragment — the client-side `hx-on::after-request` on the form closes the dialog after a successful swap
 - `delete()`: validates, deletes task, returns 200
 
 **`metrics.rs`** — `GET /projects/{id}/metrics`
@@ -232,21 +237,23 @@ HTTP handlers using axum extractors:
 | GET | `/projects/{id}` | `project::show` | Per-project task list |
 | POST | `/projects/{id}/tasks` | `project::create` | Create task (form) |
 | GET | `/projects/{id}/tasks/{task_id}` | `task::show` | Task detail |
-| POST | `/projects/{id}/tasks/{task_id}/status` | `task::update_status` | Update status (form) |
-| POST | `/projects/{id}/tasks/{task_id}/criteria` | `task::edit_criteria` | Edit criteria (form) |
+| GET | `/projects/{id}/tasks/{task_id}/edit` | `task::edit_form` | Edit-modal form fragment (htmx) |
+| POST | `/projects/{id}/tasks/{task_id}/edit` | `task::edit` | Combined save (status, criteria, spec, depends_on, blocks); returns updated `task_row.html` fragment |
 | DELETE | `/projects/{id}/tasks/{task_id}` | `task::delete` | Delete task |
 | GET | `/projects/{id}/metrics` | `metrics::show` | Per-project metrics dashboard |
 | GET | `/static/style.css` | `static_assets::style_css` | Stylesheet |
 | GET | `/static/htmx.min.js` | `static_assets::htmx_js` | htmx library |
+| GET | `/static/line-numbers.js` | `static_assets::line_numbers_js` | Criteria-textarea line-number gutter script |
 | GET | `/healthz` | inline | Health check |
 
 ## HTMX Integration
 
 The web UI uses htmx for inline interactions:
 - Task creation returns a `task_row.html` fragment that gets inserted into the task list
-- Status updates return an updated `task_row.html` fragment that replaces the existing row
-- Criteria edits return an updated `task_row.html` fragment
+- The edit modal's save returns an updated `task_row.html` fragment that replaces the existing row
 - Deletes remove the row from the DOM
+
+**Edit modal** — a single `<dialog id="edit-modal">` lives in `base.html`, present but empty on every page. The row's (or `task_detail.html`'s) "Edit" button does `hx-get` to `GET /projects/{id}/tasks/{task_id}/edit`, swaps the response into the dialog body, and opens it via `hx-on::after-request="document.getElementById('edit-modal').showModal()"` — plain htmx plus the standard `<dialog>` element, no new JS library. The form inside submits `POST` to the same path; on success the response replaces the task row (existing `hx-target`/`hx-swap="outerHTML"` pattern) and `hx-on::after-request="if(event.detail.successful) this.closest('dialog').close()"` closes the dialog. The criteria `<textarea>`'s line-number gutter is driven by `static/line-numbers.js`, a small hand-rolled script (not a library) loaded like `htmx.min.js`.
 
 ## Environment Variables
 
