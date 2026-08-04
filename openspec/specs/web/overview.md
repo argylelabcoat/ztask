@@ -191,7 +191,7 @@ A task can be both. Flagged tasks surface in a dedicated list on the metrics pag
 HTTP handlers using axum extractors:
 
 **`dashboard.rs`** — `GET /`, `POST /projects`
-- `show()`: parses `?sort=&dir=` query params, fetches all projects, sorts them via `sort_projects`, renders `dashboard.html` — sort-toggle link hrefs and the active column/direction are computed server-side and passed to the template
+- `show()`: parses `?sort=&dir=` query params, fetches all projects, sorts them via `sort_projects`, renders `dashboard.html` — sort-toggle link hrefs and the active column/direction are computed server-side and passed to the template. Each row links directly to that project's `/projects/{id}/metrics` page, alongside the link to `/projects/{id}` itself.
 - `build_dashboard()`: shared by `show()` and `create()`'s error paths — fetches, sorts, and assembles the template's data, including an optional inline form error and the submitted form values (for re-populating the create-project form on failure)
 - `create()`: creates a new project by creating its first task —
   1. validates `project_id`/`task_id` via `is_valid_id` → `400` (re-renders dashboard, form values preserved, inline error) if either fails

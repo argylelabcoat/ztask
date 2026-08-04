@@ -27,6 +27,7 @@
             <th><a href="{{ sort_incomplete_href }}">Incomplete {% if active_sort == "incomplete" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
             <th><a href="{{ sort_wip_href }}">WIP {% if active_sort == "wip" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
             <th><a href="{{ sort_activity_href }}">Activity {% if active_sort == "activity" %}{% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% else %}<span style="opacity:0.35">⇅</span>{% endif %}</a></th>
+            <th>Metrics</th>
         </tr>
     </thead>
     <tbody>
@@ -37,6 +38,7 @@
             <td>{{ p.incomplete }}</td>
             <td>{{ p.wip }}</td>
             <td>{{ p.last_activity.as_deref().unwrap_or("-") }}</td>
+            <td><a href="/projects/{{ p.id }}/metrics">Metrics</a></td>
         </tr>
         {% endfor %}
     </tbody>

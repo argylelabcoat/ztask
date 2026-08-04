@@ -134,7 +134,7 @@ keyspace is the shared contract.
 
 ## Screenshots
 
-**All-projects dashboard** — inline project creation, sortable columns (name/total/incomplete/wip/activity), sorted here by Total descending:
+**All-projects dashboard** — inline project creation, sortable columns (name/total/incomplete/wip/activity), and a direct link to each project's metrics dashboard:
 
 ![All-projects dashboard](docs/images/dashboard.png)
 
