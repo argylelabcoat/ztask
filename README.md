@@ -40,6 +40,68 @@ poetry run ztask list --project demo
 
 Agent containers joined to `ztask-net` use `tcp/zenoh-router:7447` instead.
 
+## Agent Skills
+
+Pre-built skills for LLM agents to autonomously execute tasks. Located in `.agents/skills/` — compatible with MiMoCode, Claude Code, and other skill-aware agents.
+
+### Installation
+
+**MiMoCode** — skills are auto-discovered from `.agents/skills/`. No install needed.
+
+**Claude Code** — symlink or copy into `.claude/skills/`:
+```bash
+ln -sf ../../.agents/skills .claude/skills
+```
+
+**Other agents** — point your agent at the skill files in `.agents/skills/*/SKILL.md`.
+
+### Skills
+
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| `ztask-orchestrator` | `/ztask-orchestrator <project-id>` | Fetch all incomplete tasks, spawn a sub-agent per task, drive to completion |
+| `ztask-worker` | (embedded in sub-agent prompts) | Single-task lifecycle: claim → execute (TDD) → finalize |
+| `ztask-status` | `/ztask-status <project-id>` | Project dashboard — task counts, stalled flags, overview |
+
+### Usage
+
+```bash
+# 1. Start the router
+./scripts/up.sh
+
+# 2. Create tasks
+ztask create auth-login --project myapp --criteria "Given a user with valid creds, when they POST /login, then return a JWT"
+ztask create auth-refresh --project myapp --criteria "Given an expired token, when they POST /refresh, then return a new JWT"
+
+# 3. Run the orchestrator from your LLM agent
+#    MiMoCode:  /ztask-orchestrator myapp
+#    Claude:    /ztask-orchestrator myapp
+```
+
+The orchestrator will:
+1. List all incomplete tasks
+2. Spawn a sub-agent for each task
+3. Each sub-agent claims, executes (TDD), and finalizes its task
+4. Orchestrator collects results and reports summary
+
+### How it works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Orchestrator (coordinator)                             │
+│    ztask list --filter incomplete                       │
+│    ├─► Sub-Agent A: task "auth-login"                   │
+│    │     ztask update-status IN_PROGRESS                │
+│    │     write tests → implement → pass tests           │
+│    │     ztask update-status COMPLETED                  │
+│    ├─► Sub-Agent B: task "auth-refresh"                 │
+│    │     ztask update-status IN_PROGRESS                │
+│    │     write tests → implement → pass tests           │
+│    │     ztask update-status COMPLETED                  │
+│    └─► collect results, report summary                  │
+└─────────────────────────────────────────────────────────┘
+```
+
 ## `ztask` CLI
 
 ```
@@ -117,4 +179,5 @@ docker/web/        web UI image
 scripts/up.sh      brings up router + web UI on a shared network
 tests/             CLI unit + integration tests
 docs/superpowers/  design specs and implementation plans
+.agents/skills/    LLM agent skills (orchestrator, worker, status)
 ```
