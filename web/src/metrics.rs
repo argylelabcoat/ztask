@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::models::Task;
 use crate::queries::{TERMINAL_STATUS, WIP_STATUSES};
@@ -201,6 +201,55 @@ pub fn compute_velocity(tasks: &HashMap<String, Task>) -> Vec<VelocityPoint> {
             VelocityPoint { date, completions, height_pct }
         })
         .collect()
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionMatrix {
+    pub statuses: Vec<String>,
+    pub counts: Vec<Vec<usize>>,
+    pub cell_styles: Vec<Vec<String>>,
+}
+
+pub fn compute_transition_matrix(tasks: &HashMap<String, Task>) -> TransitionMatrix {
+    let mut status_set: BTreeSet<String> = BTreeSet::new();
+    for task in tasks.values() {
+        for entry in &task.history {
+            status_set.insert(entry.from_status.clone());
+            status_set.insert(entry.to_status.clone());
+        }
+    }
+    let statuses: Vec<String> = status_set.into_iter().collect();
+    let index: HashMap<&str, usize> = statuses.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+
+    let mut counts = vec![vec![0usize; statuses.len()]; statuses.len()];
+    for task in tasks.values() {
+        for entry in &task.history {
+            if let (Some(&from_idx), Some(&to_idx)) =
+                (index.get(entry.from_status.as_str()), index.get(entry.to_status.as_str()))
+            {
+                counts[from_idx][to_idx] += 1;
+            }
+        }
+    }
+
+    let max = counts.iter().flatten().copied().max().unwrap_or(0);
+    let cell_styles: Vec<Vec<String>> = counts
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|&count| {
+                    if count == 0 || max == 0 {
+                        "background-color: transparent".to_string()
+                    } else {
+                        let alpha = 0.15 + 0.65 * (count as f64 / max as f64);
+                        format!("background-color: rgba(21, 101, 192, {alpha:.2})")
+                    }
+                })
+                .collect()
+        })
+        .collect();
+
+    TransitionMatrix { statuses, counts, cell_styles }
 }
 
 #[cfg(test)]
@@ -428,5 +477,42 @@ mod tests {
     fn compute_velocity_empty_when_no_history() {
         let tasks: HashMap<String, Task> = HashMap::new();
         assert!(compute_velocity(&tasks).is_empty());
+    }
+
+    #[test]
+    fn compute_transition_matrix_counts_transitions_across_tasks() {
+        let mut t1 = Task::new("t1");
+        t1.history = vec![
+            history_entry("2026-08-01T00:00:00+00:00", "NONE", "PENDING"),
+            history_entry("2026-08-01T00:10:00+00:00", "PENDING", "IN_PROGRESS"),
+            history_entry("2026-08-01T00:20:00+00:00", "IN_PROGRESS", "PENDING"),
+        ];
+        let mut t2 = Task::new("t2");
+        t2.history = vec![history_entry("2026-08-01T00:00:00+00:00", "PENDING", "IN_PROGRESS")];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), t1);
+        tasks.insert("t2".to_string(), t2);
+
+        let matrix = compute_transition_matrix(&tasks);
+
+        assert_eq!(matrix.statuses, vec!["IN_PROGRESS".to_string(), "NONE".to_string(), "PENDING".to_string()]);
+        let idx = |s: &str| matrix.statuses.iter().position(|x| x == s).unwrap();
+        assert_eq!(matrix.counts[idx("NONE")][idx("PENDING")], 1);
+        assert_eq!(matrix.counts[idx("PENDING")][idx("IN_PROGRESS")], 2);
+        assert_eq!(matrix.counts[idx("IN_PROGRESS")][idx("PENDING")], 1);
+
+        assert_eq!(matrix.cell_styles.len(), matrix.statuses.len());
+        assert_eq!(matrix.cell_styles[idx("NONE")][idx("NONE")], "background-color: transparent");
+        assert!(matrix.cell_styles[idx("PENDING")][idx("IN_PROGRESS")].starts_with("background-color: rgba"));
+    }
+
+    #[test]
+    fn compute_transition_matrix_empty_when_no_tasks() {
+        let tasks: HashMap<String, Task> = HashMap::new();
+        let matrix = compute_transition_matrix(&tasks);
+        assert!(matrix.statuses.is_empty());
+        assert!(matrix.counts.is_empty());
+        assert!(matrix.cell_styles.is_empty());
     }
 }
