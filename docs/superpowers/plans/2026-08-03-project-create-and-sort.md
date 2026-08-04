@@ -162,7 +162,7 @@ git commit -m "feat(web): compute last_activity per project from task history"
 
 **Interfaces:**
 - Consumes: `ProjectSummary` from Task 1 (needs `id: String, total: usize, incomplete: usize, wip: usize, last_activity: Option<String>`).
-- Produces: `pub enum SortKey { Name, Total, Incomplete, Wip, Activity }` with `SortKey::parse(&str) -> SortKey` and `SortKey::as_str(self) -> &'static str`; `pub enum SortDir { Asc, Desc }` with `SortDir::parse(&str) -> SortDir`, `SortDir::as_str(self) -> &'static str`, `SortDir::flip(self) -> SortDir`; `pub fn sort_projects(projects: &mut Vec<ProjectSummary>, key: SortKey, dir: SortDir)`. Task 3 depends on all of these exact names.
+- Produces: `pub enum SortKey { Name, Total, Incomplete, Wip, Activity }` with `SortKey::parse(&str) -> SortKey` and `SortKey::as_str(self) -> &'static str`; `pub enum SortDir { Asc, Desc }` with `SortDir::parse(&str) -> SortDir`, `SortDir::as_str(self) -> &'static str`, `SortDir::flip(self) -> SortDir`; `pub fn sort_projects(projects: &mut [ProjectSummary], key: SortKey, dir: SortDir)` (a `&mut Vec<ProjectSummary>` argument also satisfies this via deref coercion). Task 3 depends on all of these exact names.
 
 - [ ] **Step 1: Write the failing tests**
 
