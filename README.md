@@ -52,7 +52,7 @@ Pre-built skills for LLM agents to autonomously execute tasks. Located in `.agen
 
 **Claude Code** — symlink or copy into `.claude/skills/`:
 ```bash
-ln -sf ../../.agents/skills .claude/skills
+ln -sf ../.agents/skills .claude/skills
 ```
 
 **Other agents** — point your agent at the skill files in `.agents/skills/*/SKILL.md`.
