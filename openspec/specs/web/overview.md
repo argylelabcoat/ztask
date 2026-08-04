@@ -4,9 +4,11 @@ Rust (axum + askama + htmx) admin web UI for humans.
 
 ## Overview
 
-A web UI that talks to the Zenoh router directly over the official zenoh Rust SDK — no CLI shell-out. Provides an all-projects dashboard and a per-project dashboard with inline create/update-status/edit-criteria/delete.
+A web UI that talks to the Zenoh router directly over the official zenoh Rust SDK — no CLI shell-out. Provides an all-projects dashboard — sortable, with inline project creation — and a per-project dashboard with inline create/update-status/edit-criteria/delete.
 
 Defaults task creation to `entered_by: USER`.
+
+A project has no standalone entity or marker key — its existence is fully derived from its tasks. Creating a project from the dashboard is creating the first task under a project ID that has no existing tasks.
 
 ## Crate Structure
 
@@ -17,14 +19,14 @@ web/
     main.rs            # entry point, binds on 0.0.0.0:8080
     lib.rs             # app() router, AppState, helpers
     models.rs          # Task, HistoryEntry structs
-    queries.rs         # fetch_all_tasks, fetch_task, fetch_all_projects
+    queries.rs         # fetch_all_tasks, fetch_task, fetch_all_projects, SortKey/SortDir/sort_projects
     tasks.rs           # create_task, update_status, edit_criteria, delete_task
     render.rs          # HtmlTemplate wrapper
     zenoh_client.rs    # session management, RealZenohStore
     zenoh_store.rs     # ZenohStore trait + FakeStore for tests
     handlers/
       mod.rs
-      dashboard.rs     # GET / — all-projects dashboard
+      dashboard.rs     # GET / (sortable), POST /projects — all-projects dashboard + project creation
       project.rs       # GET /projects/{id}, POST /projects/{id}/tasks
       task.rs          # GET/DELETE /projects/{id}/tasks/{task_id}, POST .../status, POST .../criteria
       static_assets.rs # GET /static/style.css, /static/htmx.min.js
@@ -102,14 +104,27 @@ pub struct Task {
   - Queries `projects/{project_id}/tasks/{task_id}/**`
 
 - `fetch_all_projects(store)` → `Vec<ProjectSummary>`
-  - Queries `projects/*/tasks/*/status`
-  - Groups by project ID, counts total/incomplete/wip
+  - Queries `projects/*/tasks/*/status`, groups by project ID, counts total/incomplete/wip
+  - Queries `projects/*/tasks/*/history/*` to fold in `last_activity` (max history timestamp per project)
+  - Returns projects sorted by ID ascending (the default; callers apply `sort_projects` for other orderings)
 
 `apply_field()` maps Zenoh key suffixes to Task fields:
 - `"status"` → `task.status`
 - `"time_entered"` → `task.time_entered`
 - `"history/*"` → parse JSON, push to `task.history`
 - etc.
+
+```rust
+pub struct ProjectSummary {
+    pub id: String,
+    pub total: usize,
+    pub incomplete: usize,
+    pub wip: usize,
+    pub last_activity: Option<String>,  // RFC3339, max history timestamp across the project's tasks
+}
+```
+
+**Sorting** — `SortKey` (`Name | Total | Incomplete | Wip | Activity`) and `SortDir` (`Asc | Desc`), each with `parse(&str)` (unknown/empty input silently falls back to `Name`/`Asc`) and `as_str()`; `SortDir::flip()` toggles direction. `sort_projects(projects, key, dir)` sorts a `&mut [ProjectSummary]` in place. Sort state lives only in the `GET /` query string (`?sort=&dir=`) — no cookies, no session.
 
 ### `tasks.rs`
 
@@ -138,9 +153,14 @@ Business logic for task mutations:
 
 HTTP handlers using axum extractors:
 
-**`dashboard.rs`** — `GET /`
-- Fetches all projects via `fetch_all_projects()`
-- Renders `dashboard.html` template
+**`dashboard.rs`** — `GET /`, `POST /projects`
+- `show()`: parses `?sort=&dir=` query params, fetches all projects, sorts them via `sort_projects`, renders `dashboard.html` — sort-toggle link hrefs and the active column/direction are computed server-side and passed to the template
+- `build_dashboard()`: shared by `show()` and `create()`'s error paths — fetches, sorts, and assembles the template's data, including an optional inline form error and the submitted form values (for re-populating the create-project form on failure)
+- `create()`: creates a new project by creating its first task —
+  1. validates `project_id`/`task_id` via `is_valid_id` → `400` (re-renders dashboard, form values preserved, inline error) if either fails
+  2. checks `fetch_all_tasks(project_id)` is empty → `409` (same re-render) if the project already has tasks — this route is create-only, not an alternate path to `POST /projects/{id}/tasks`
+  3. otherwise calls `tasks::create_task` (no new key namespace — identical to the per-project create-task flow) and responds `303 See Other` with `Location: /projects/{project_id}`
+  - Plain HTML form submit (not htmx): the target URL depends on user-entered input (the new project ID), which htmx's static `hx-post` can't express
 
 **`project.rs`** — `GET /projects/{id}`, `POST /projects/{id}/tasks`
 - `show()`: fetches all tasks, applies filter (all/incomplete/wip), sorts by ID, renders `project.html`
@@ -167,7 +187,8 @@ HTTP handlers using axum extractors:
 
 | Method | Path | Handler | Description |
 |--------|------|---------|-------------|
-| GET | `/` | `dashboard::show` | All-projects dashboard |
+| GET | `/` | `dashboard::show` | All-projects dashboard, supports `?sort=name\|total\|incomplete\|wip\|activity&dir=asc\|desc` |
+| POST | `/projects` | `dashboard::create` | Create a project (+ its first task); `303` to `/projects/{id}` on success, `400`/`409` re-renders dashboard on failure |
 | GET | `/projects/{id}` | `project::show` | Per-project task list |
 | POST | `/projects/{id}/tasks` | `project::create` | Create task (form) |
 | GET | `/projects/{id}/tasks/{task_id}` | `task::show` | Task detail |
