@@ -9,6 +9,8 @@
     </ul>
 </nav>
 
+<p>{{ total_tasks }} task{% if total_tasks != 1 %}s{% endif %} total</p>
+
 <h2>Status breakdown</h2>
 {% if donut_segments.is_empty() %}
 <p>No tasks yet.</p>
