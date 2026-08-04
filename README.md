@@ -185,6 +185,7 @@ docker/router/     zenohd + Garry router image
 docker/web/        web UI image
 scripts/up.sh      brings up router + web UI on a shared network
 tests/             CLI unit + integration tests
+docs/              federated-routers, GNATS comparison, images
 docs/superpowers/  design specs and implementation plans
 openspec/          specs, plans, and guides for spec-driven development
 .agents/skills/    LLM agent skills (ingest, orchestrator, worker, status)
@@ -193,3 +194,8 @@ openspec/          specs, plans, and guides for spec-driven development
 ## Guides
 
 - [Ingest → Implementation Workflow](openspec/guides/ingest-to-implementation.md) — how to use OpenSpec specs and ztask-ingest to drive autonomous implementation with LLM sub-agents.
+
+## Docs
+
+- [Federated ztask Routers — Multi-Tenant LLM Isolation](docs/federated-routers.md) — how to run a primary `zenohd` + per-project agent routers in Docker Compose so each LLM agent can only reach its assigned project's keyspace. Covers Zenoh scouting/gossip, storage scoping, ACL config (Zenoh 1.0+ `rules`/`subjects`/`policies`), network isolation, and an isolation test suite.
+- [ztask vs GNU GNATS](docs/comparison-gnu-gnats.md) — a factual, side-by-side comparison of the two tools' data models, CLIs, storage, concurrency, and feature gaps, with references to the GNATS 4.2 manual and the `ztask` source.

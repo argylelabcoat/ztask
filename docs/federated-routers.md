@@ -7,8 +7,8 @@ How to run multiple ztask routers with project-scoped data replication so that L
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Primary Router (zenohd + Garry)                                    │
-│  Storage: projects/**                                               │
-│  Port: 7447                                                         │
+│  Storage: projects/**  (key_expr)                                   │
+│  Listen:  tcp/0.0.0.0:7447                                          │
 │                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
 │  │ project-a    │  │ project-b    │  │ project-c    │              │
@@ -16,12 +16,15 @@ How to run multiple ztask routers with project-scoped data replication so that L
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 └─────────────────────────────────────────────────────────────────────┘
         │                    │                    │
-        │ (replicate         │ (replicate         │ (replicate
-        │  project-a/**)     │  project-b/**)     │  project-c/**)
+        │ (agent router      │ (agent router      │ (agent router
+        │  connects to       │  connects to       │  connects to
+        │  primary; queries  │  primary; queries  │  primary; queries
+        │  routed to Garry)  │  routed to Garry)  │  routed to Garry)
         ▼                    ▼                    ▼
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │ Router A     │    │ Router B     │    │ Router C     │
-│ Port: 7448   │    │ Port: 7449   │    │ Port: 7450   │
+│ Listen: 7448 │    │ Listen: 7449 │    │ Listen: 7450 │
+│ scouting off │    │ scouting off │    │ scouting off │
 │              │    │              │    │              │
 │ ┌──────────┐ │    │ ┌──────────┐ │    │ ┌──────────┐ │
 │ │LLM Agent│ │    │ │LLM Agent│ │    │ │LLM Agent│ │
@@ -30,15 +33,33 @@ How to run multiple ztask routers with project-scoped data replication so that L
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
 
-Each LLM agent's router only contains data for its assigned project. The agent cannot read or write to other projects.
+Each LLM agent's router connects only to the primary (which owns the
+Garry storage). The agent cannot reach sibling agent routers
+(scouting/gossip disabled, separate Docker networks where shown).
 
 ## Zenoh Scouting and Routing
 
-Zenoh routers discover each other via scouting (multicast UDP by default). When multiple routers run on the same network, they automatically form a routing mesh. To isolate agents:
+Zenoh routers/peers discover each other via scouting (multicast UDP by
+default on `224.0.0.224:7446`) and via gossip once peers are connected.
+When multiple routers run on the same network with multicast scouting
+enabled, they will auto-connect according to their `autoconnect`
+settings. To isolate agents by forcing them to connect only to the
+primary router:
 
-1. **Primary router** — stores all projects, connects to all agent routers
-2. **Agent routers** — connect to primary, replicate only assigned project keys
-3. **LLM agents** — connect only to their assigned agent router
+1. **Primary router** — stores all projects (`key_expr: "projects/**"`),
+   listens on `tcp/0.0.0.0:7447`. May keep multicast scouting enabled on
+   a controlled network, or be configured with explicit `connect`/`listen`
+   endpoints only.
+2. **Agent routers** — connect to the primary via `connect.endpoints`,
+   listen on a per-agent port for their LLM agent, and **disable both
+   multicast scouting and gossip** so they do not auto-discover sibling
+   agent routers.
+3. **LLM agents** — connect only to their assigned agent router's
+   `ZTASK_ZENOH_ENDPOINT`.
+
+See the [Zenoh configuration
+manual](https://zenoh.io/docs/manual/configuration/) for the full
+`scouting.multicast` and `scouting.gossip` options.
 
 ## Docker Compose Setup
 
@@ -58,27 +79,35 @@ docker/
 
 ### Primary Router Config
 
-`docker/router/config.json5`:
+`docker/router/config.json5` (mirrors the format used in this repo — see
+the actual file and [Zenoh's storage manager plugin
+docs](https://zenoh.io/docs/manual/plugin-storage-manager/)):
 
 ```json5
 {
+  plugins_loading: {
+    enabled: true
+  },
   plugins: {
     storage_manager: {
-      volumes: [{
-        name: "garry",
-        backend: "garry",
-        storages: [{
-          name: "projects",
+      volumes: {
+        garry: {
+          backend: "garry"
+        }
+      },
+      storages: {
+        projects: {
           key_expr: "projects/**",
           volume: {
-            db_path: "/data/zenoh-garry",
+            id: "garry",
+            db_path: "/data",
             pool_size: 256,
             max_record_size: 1048576,
             max_versions: 64,
             compression: "lz4"
           }
-        }]
-      }]
+        }
+      }
     }
   }
 }
@@ -90,7 +119,7 @@ docker/
 
 ```json5
 {
-  // Connect to primary router
+  // Connect to primary router (no auto-discovery of siblings)
   connect: {
     endpoints: ["tcp/primary-router:7447"]
   },
@@ -98,10 +127,12 @@ docker/
   listen: {
     endpoints: ["tcp/0.0.0.0:AGENT_PORT"]
   },
-  // Only route specific key expressions
   scouting: {
     multicast: {
-      enabled: false  // Disable auto-discovery
+      enabled: false  // disable multicast auto-discovery
+    },
+    gossip: {
+      enabled: false  // disable gossip-based auto-discovery
     }
   }
 }
@@ -220,6 +251,9 @@ cat > /tmp/config.json5 << EOF
   scouting: {
     multicast: {
       enabled: false
+    },
+    gossip: {
+      enabled: false
     }
   }
 }
@@ -230,45 +264,94 @@ exec zenohd -c /tmp/config.json5
 
 ## Key Expression Routing
 
-Zenoh routes based on key expressions. To isolate agents:
+Zenoh routes based on key expressions and the declarations made by
+clients (interest-based routing): a publication is forwarded only to
+routers/peers that have declared a matching subscriber or queryable.
+To isolate agents, the practical levers are storage scoping, ACL, and
+network isolation, summarised below.
 
 ### Option 1: Storage-Level Isolation
 
-The primary router stores all projects. Agent routers don't store data locally — they route requests to the primary. The agent can only access keys that match the routing rules.
+The primary router stores all projects. Agent routers don't configure
+a storage; they only forward requests to the primary. The agent's
+`ztask` queries (`projects/<project>/**`) are routed to the primary's
+Garry storage, which returns only the matching keys.
 
-**Limitation:** Agent router still sees all traffic, just doesn't store it.
+**Limitation:** This is not a security boundary — Zenoh's
+interest-based routing will forward matching publications to any
+router that has declared a matching subscriber, so a misconfigured
+agent router that subscribes to `projects/**` would still receive
+other projects' updates. Use this only for *organisational*
+isolation, not for *adversarial* isolation.
 
 ### Option 2: Access Control via Config
 
-Configure agent routers to only accept specific key expressions:
+Zenoh 1.0+ supports an access-control list (ACL) plugin that filters
+messages by key expression, message type, and flow. The config schema
+requires `rules`, `subjects`, and `policies` sections — a single
+flat rule list is not accepted. See the
+[Access Control manual](https://zenoh.io/docs/manual/access-control/)
+for the full schema.
 
 ```json5
 {
-  // ... other config ...
   access_control: {
     enabled: true,
+    default_permission: "deny",  // deny everything not explicitly allowed
+
     rules: [
       {
-        key_expr: "projects/project-a/**",
+        id: "allow-project-a",
         permission: "allow",
-        flow: "both"
+        flows: ["ingress", "egress"],
+        messages: [
+          "put", "delete", "declare_subscriber",
+          "query", "reply", "declare_queryable"
+        ],
+        key_exprs: ["projects/project-a/**"]
       },
       {
-        key_expr: "projects/project-b/**",
+        id: "deny-project-b",
         permission: "deny",
-        flow: "both"
-      },
+        flows: ["ingress", "egress"],
+        messages: [
+          "put", "delete", "declare_subscriber",
+          "query", "reply", "declare_queryable"
+        ],
+        key_exprs: ["projects/project-b/**"]
+      }
+    ],
+
+    subjects: [
+      // An empty subject is a wildcard that matches any connecting Zenoh instance.
+      // For tighter isolation, constrain this by `interfaces`, `cert_common_names`,
+      // `usernames`, `link_protocols`, or `zids` (see the ACL manual).
+      { id: "any-agent" }
+    ],
+
+    policies: [
       {
-        key_expr: "projects/project-c/**",
-        permission: "deny",
-        flow: "both"
+        rules: ["allow-project-a", "deny-project-b"],
+        subjects: ["any-agent"]
       }
     ]
   }
 }
 ```
 
-**Limitation:** Zenoh's access control is experimental and may not be available in all versions.
+**Limitations:**
+- ACL is not a substitute for network isolation — it filters Zenoh
+  messages, but a malicious peer on the same Zenoh network can still
+  attempt to connect and send messages that get filtered (not blocked
+  at the transport level).
+- ACL config cannot be updated at runtime; it requires a router restart.
+- ACL decisions can have a measurable performance impact; prefer
+  `default_permission: "deny"` with a small number of `allow` rules
+  (or the opposite) to minimise the rules evaluated per message.
+- A `deny` on `declare_subscriber` will also suppress the routing of
+  matching publications to that agent, but the agent can still issue
+  `query`/`put` against other key expressions unless those are also
+  denied.
 
 ### Option 3: Separate Networks
 
@@ -306,28 +389,35 @@ Agent ← Agent Router ← Primary Router ← Garry Storage
 
 ### Approach 2: Cached Replication
 
-Agent routers cache recent queries locally:
+Agent routers cache recent queries locally (config snippet below uses
+the same `volumes`/`storages` shape as the primary router config above):
 
 ```json5
 {
   // Agent router config
+  plugins_loading: {
+    enabled: true
+  },
   plugins: {
     storage_manager: {
-      volumes: [{
-        name: "cache",
-        backend: "garry",
-        storages: [{
-          name: "project-a-cache",
+      volumes: {
+        garry: {
+          backend: "garry"
+        }
+      },
+      storages: {
+        "project-a-cache": {
           key_expr: "projects/project-a/**",
           volume: {
+            id: "garry",
             db_path: "/data/cache",
             pool_size: 64,
             max_record_size: 1048576,
             max_versions: 1,
             compression: "lz4"
           }
-        }]
-      }]
+        }
+      }
     }
   }
 }
@@ -380,9 +470,15 @@ ztask create malicious-task --project project-b --criteria "test"
 ### Test 3: Network Isolation
 
 ```bash
-# From agent-a container
-curl http://router-project-b:7449/healthz
-# Expected: Connection refused (different network)
+# From agent-a container, try to talk to router-project-b's Zenoh port.
+# Zenoh's TCP listener does not serve a /healthz endpoint by default —
+# this is a raw-TCP reachability probe, not an HTTP one.
+nc -zv router-project-b 7449
+# Expected: Connection refused or timeout (different Docker network)
+
+# To query a router's status over HTTP, enable the REST plugin
+# (--rest-http-port=8000) and GET @/local/router. The default zenohd
+# build used in this repo does not enable the REST plugin.
 ```
 
 ## Multi-Project Orchestrator
@@ -451,15 +547,27 @@ docker exec llm-agent-project-a ztask list --project project-a
 
 ## Limitations
 
-1. **Zenoh version** — access control features may be experimental
-2. **Network overhead** — each agent router adds latency
-3. **Storage overhead** — cached replication duplicates data
-4. **Complexity** — more moving parts to manage
-5. **Debugging** — harder to trace issues across routers
+1. **ACL version sensitivity** — the ACL config schema shown above is
+   the Zenoh 1.0+ format; older Zenoh 0.11 configs used a different
+   flat-rule schema (see the [0.11 ACL
+   RFC](https://github.com/eclipse-zenoh/roadmap/blob/ca841fe219890bf73289089b520271d70ded89b6/rfcs/ALL/Access%20Control%20Rules.md))
+2. **Network overhead** — each agent router adds a hop and therefore latency
+3. **Storage overhead** — cached replication duplicates data on each agent router
+4. **Complexity** — more moving parts to manage (one router per project + primary)
+5. **Debugging** — harder to trace issues across routers; use the admin space
+   (`@/<router-id>/router`) and the REST plugin for observability
+6. **Routing is not a security boundary** — interest-based routing will
+   forward to any peer that declares the matching interest; for true
+   isolation, combine network separation with ACL, not routing alone
 
 ## References
 
-- [Zenoh Documentation](https://zenoh.io/docs/)
-- [Zenoh Access Control](https://zenoh.io/docs/manual/access-control/)
-- [Docker Networking](https://docs.docker.com/network/)
-- [Garry Storage Backend](https://github.com/Argylelabcoat/Garry)
+- [Zenoh Documentation](https://zenoh.io/docs/getting-started/first-app/) — overview, getting started
+- [Zenoh Configuration](https://zenoh.io/docs/manual/configuration/) — `connect`/`listen`/`scouting` options used above
+- [Zenoh Abstractions](https://zenoh.io/docs/manual/abstractions/) — key expressions, selectors, storages
+- [Zenoh Storage Manager Plugin](https://zenoh.io/docs/manual/plugin-storage-manager/) — `volumes`/`storages` config schema
+- [Zenoh Access Control](https://zenoh.io/docs/manual/access-control/) — ACL `rules`/`subjects`/`policies` schema
+- [Zenoh DEFAULT_CONFIG.json5](https://github.com/eclipse-zenoh/zenoh/blob/main/DEFAULT_CONFIG.json5) — canonical reference config
+- [Docker Networking](https://docs.docker.com/network/) — bridge networks, `internal: true`
+- [Garry Storage Backend](https://github.com/Argylelabcoat/Garry) — the storage backend used in this repo
+- `docker/router/config.json5` — this repo's primary router config (the source of truth for the snippet above)
