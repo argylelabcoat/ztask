@@ -146,7 +146,7 @@ tests/bdd/auth_refresh.feature
 Task IDs are derived from filenames:
 - `01-db-migrations.md` → `db-migrations`
 - `02-auth-login.md` → `auth-login`
-- Pattern: strip leading digits and hyphen, strip `.md` extension
+- Pattern: strip the leading `<digits>-` prefix (digits + following hyphen), then strip the `.md` extension
 
 ## Gherkin Validation
 
@@ -351,8 +351,13 @@ ztask get <task-id> --project <project-id>
 Use the `ztask-ingest` CLI command:
 
 ```bash
-ztask-ingest <project-id> <spec-path> [--dry-run]
+ztask-ingest <project-id> <spec-path> [--dry-run] [--no-gherkin] [--no-bdd]
 ```
+
+Flags:
+- `--dry-run` — parse and validate only, do not create tasks in Zenoh
+- `--no-gherkin` — skip Gherkin validation and conversion of acceptance criteria
+- `--no-bdd` — skip BDD feature file generation
 
 Or manually create tasks for each task (in topological order):
 
@@ -366,6 +371,13 @@ ztask create <task-id> --project <project-id> \
   --test-command "<cmd>" \
   --verify-command "<cmd>"
 ```
+
+> **Field limitations:** `ztask create` does not have flags for
+> `blocks`, `tdd_phase`, or `failure_reason`. The `blocks` field is
+> the inverse of `depends_on` and is not populated by the CLI — it
+> would need a direct Zenoh write. `tdd_phase` and `failure_reason`
+> are lifecycle fields written during execution (see ztask-worker),
+> not at creation time.
 
 ### Step 9: Generate BDD Feature Files
 

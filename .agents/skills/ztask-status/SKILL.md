@@ -44,7 +44,7 @@ For each non-COMPLETED task, show:
 - TDD Phase (red/green/refactor/—)
 - Acceptance criteria (truncated to 100 chars)
 - Dependencies (depends_on list, met/unmet)
-- Time in current status (computed from `time_accepted` or `time_entered`)
+- Time in current status (computed from `time_accepted` when IN_PROGRESS/WIP/RUNNING — set by `update-status` on entry to a WIP status — otherwise from `time_entered`)
 - Attempt count (if > 0)
 - Failure reason (if set and status is PENDING)
 - Last note from history
@@ -72,11 +72,16 @@ Dependency Graph:
 ## CLI Reference
 
 ```
-ztask list   --project <id> [--filter all|incomplete|wip|blocked]
+ztask list   --project <id> [--filter all|incomplete|wip]
 ztask get    <task-id> --project <id>
 ztask create <task-id> --project <id> [--criteria "..."] [--spec "..."] [--depends-on "..."] [--entered-by llm|user]
 ztask update-status <task-id> <status> --project <id> [--note "..."]
 ```
+
+> The CLI only supports the filters `all`, `incomplete`, and `wip`
+> (see `ztask/cli.py`). There is no `blocked` filter — compute
+> blocked tasks client-side from `depends_on` vs. the set of
+> `COMPLETED` task IDs.
 
 Environment: `ZTASK_ZENOH_ENDPOINT` (default: `tcp/localhost:7447`)
 

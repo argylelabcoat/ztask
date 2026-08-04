@@ -101,11 +101,11 @@ Add a changelog entry to the feature spec:
 
 After successful merge:
 1. Archive the update spec (move to `openspec/archive/` or delete)
-2. Remove the project from Zenoh (optional):
-   ```bash
-   # Only if project is fully completed
-   ztask delete-project <project-id>
-   ```
+2. Leave the project in Zenoh — the CLI has no `delete-project`
+   command. Tasks remain queryable via `ztask list --filter all`
+   for audit history. If you truly need to remove a project's data,
+   delete the keys directly via a Zenoh client (e.g., the REST plugin
+   or a small script using `zenoh.open()` + `session.delete()`).
 
 ### Step 7: Report
 

@@ -35,9 +35,9 @@ ztask list --project "$PROJECT_ID" --filter incomplete
 Parse the JSON array. For each task, read:
 - `status` — PENDING, IN_PROGRESS, WIP, RUNNING
 - `depends_on` — list of task IDs that must complete first
-- `attempt_count` — number of previous attempts
-- `failure_reason` — why it last failed (if any)
-- `tdd_phase` — red/green/refactor/None
+- `attempt_count` — number of previous attempts (auto-incremented by `update-status` on entry to a WIP status)
+- `failure_reason` — why it last failed (if set; note: the CLI never writes this field — check the most recent `history` entry's `note` for failure details)
+- `tdd_phase` — red/green/refactor/None (note: the CLI never writes this field — infer from the most recent `history` note)
 
 ### Step 3: Resolve dependencies
 
@@ -56,7 +56,17 @@ Blocked:  [auth-login]              ← waiting on db-migrations
 
 ### Step 4: Spawn sub-agent workers
 
-For each task in the **ready queue**, spawn a sub-agent via the `actor` tool with this prompt:
+For each task in the **ready queue**, spawn a sub-agent. The mechanism
+depends on the host agent platform:
+
+- **OpenCode:** use the `task` tool with `subagent_type: "general"` for
+  implementation tasks, or `subagent_type: "explore"` for
+  investigation-only tasks.
+- **MiMoCode:** use the `actor` tool.
+- **Claude Code:** use the `Task` tool with `subagent_type: "general"`.
+
+Use this prompt template (fill `{...}` placeholders from the task's
+fields):
 
 ```
 You are an Autonomous Developer Sub-Agent. Your ONLY job: complete this one task.
@@ -72,13 +82,14 @@ You are an Autonomous Developer Sub-Agent. Your ONLY job: complete this one task
 - TDD Phase: {TDD_PHASE}  (null = start fresh, "red" = tests written, "green" = implementing)
 - Test Command: {TEST_COMMAND}
 - Verification Command: {VERIFICATION_COMMAND}
-- Attempt: {ATTEMCTION_COUNT}
+- Attempt: {ATTEMPT_COUNT}
 - Previous Failure: {FAILURE_REASON}
 
 ## Execution Lifecycle
 
 ### Phase 1: Claim
-Update status to IN_PROGRESS and increment attempt count:
+Update status to IN_PROGRESS. The CLI auto-increments attempt_count
+on this transition — do NOT increment it yourself.
   ztask update-status {TASK_ID} IN_PROGRESS --project {PROJECT_ID} --note "Attempt {N}: starting from phase {TDD_PHASE}"
 
 ### Phase 2: Assess
@@ -88,22 +99,25 @@ Read the acceptance criteria and spec.
 - If TDD phase is "green" → skip to Phase 3c (implementing, verify and finalize)
 - If TDD phase is null → start from Phase 3a
 
+> The CLI does not persist `tdd_phase` — encode the phase in the
+> `--note` of each update so it can be recovered from history.
+
 ### Phase 3a: Write Tests (TDD Red)
 - Write test files that encode the acceptance criteria
 - Run: {TEST_COMMAND}
 - Confirm tests fail as expected
-- Update note: "Tests written, moving to green phase"
+- Update note: "red: tests written, moving to green phase"
 
 ### Phase 3b: Implement (TDD Green)
 - Implement minimal code in {IMPLEMENTATION_FILES}
 - Run: {TEST_COMMAND}
 - If tests pass → move to Phase 3c
-- If tests fail → fix and re-run (max 5 iterations, then report BLOCKED)
+- If tests fail → fix and re-run (max 5 iterations, then update status to PENDING with note "Blocked: tests failing after 5 attempts" and STOP)
 
 ### Phase 3c: Verify (TDD Refactor)
 - Run: {VERIFICATION_COMMAND}
 - If verification passes → move to Phase 4
-- If verification fails → fix or report BLOCKED
+- If verification fails → fix, or update status to PENDING with note "Blocked: verification failed: <details>" and STOP
 
 ### Phase 4: Finalize
 IF successful:
@@ -111,7 +125,8 @@ IF successful:
 
 IF blocked or failed:
   ztask update-status {TASK_ID} PENDING --project {PROJECT_ID} --note "Blocked: <reason>"
-  (failure_reason is set automatically)
+  (Put the failure detail in the note — the CLI does not auto-populate
+   the `failure_reason` field.)
 
 ## Rules
 - You own ONLY this task. Do not touch other tasks.
@@ -119,9 +134,8 @@ IF blocked or failed:
 - If you cannot determine what to do, fail fast with a clear note.
 - Do not mark COMPLETED unless acceptance criteria are demonstrably met.
 - Stay within your assigned files: {TEST_FILES} and {IMPLEMENTATION_FILES}
+- There is no `BLOCKED` status — use PENDING with a blocking note.
 ```
-
-Use `subagent_type: "general"` for implementation tasks or `subagent_type: "explore"` for investigation-only tasks.
 
 ### Step 5: Monitor and collect results
 
@@ -203,10 +217,14 @@ After all tasks reach a terminal state or the queue is stuck:
 
 ## Concurrency Notes
 
-- Sub-agents run in parallel by default (MiMoCode actor tool)
-- Status locking is enforced: only one sub-agent should claim a PENDING task at a time
-- If two sub-agents race on the same task, the second `update-status` will see it's already IN_PROGRESS and should back off
-- Dependency resolution prevents spawning tasks with unmet dependencies
+- Sub-agents may run in parallel depending on the host platform's
+  sub-agent tool (OpenCode `task`, MiMoCode `actor`, Claude `Task`).
+- **No status locking:** `ztask update-status` does not check the
+  current status before writing — the last write wins. Two workers
+  racing on the same task ID will both succeed and clobber each other.
+  The orchestrator must prevent this by never spawning two workers
+  for the same task ID in the same batch.
+- Dependency resolution prevents spawning tasks with unmet dependencies.
 
 ## Intervention Triggers
 
@@ -220,11 +238,20 @@ Stop and ask the user when:
 
 ## TDD Phase Tracking
 
-The orchestrator extracts `tdd_phase` from:
-1. The task's `tdd_phase` field (if set)
-2. The last history entry's note (if it contains "TDD phase: red/green/refactor")
+The orchestrator infers the current TDD phase for a task from:
 
-When spawning a worker, the orchestrator passes the current phase so the worker can resume mid-cycle instead of starting over.
+1. The task's `tdd_phase` field — **if set**. Note: the `ztask` CLI
+   never writes this field (only `create` and `update-status` exist,
+   and neither sets `tdd_phase`), so it will be `null` for tasks
+   created via the CLI. It may be populated by direct Zenoh writes
+   from other tools.
+2. Otherwise, the most recent `history` entry's `note` — if it
+   contains a phase marker like `"red: ..."`, `"green: ..."`, or
+   `"refactor: ..."`. This is the recommended way to track phase,
+   since workers encode their phase in `update-status --note`.
+
+When spawning a worker, the orchestrator passes the inferred phase so
+the worker can resume mid-cycle instead of starting over.
 
 ## Dependency Graph Example
 
