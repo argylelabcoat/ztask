@@ -69,6 +69,12 @@ def create_task(
     project_id: str = typer.Option(..., "--project", "-p", help="Project ID"),
     task_id: str = typer.Argument(..., help="Task ID"),
     criteria: str = typer.Option("", "--criteria", "-c", help="Acceptance criteria or Gherkin spec"),
+    spec: str = typer.Option("", "--spec", "-s", help="Full specification / design notes"),
+    depends_on: str = typer.Option("", "--depends-on", help="Comma-separated task IDs this task depends on"),
+    test_files: str = typer.Option("", "--test-files", help="Comma-separated test file paths"),
+    impl_files: str = typer.Option("", "--impl-files", help="Comma-separated implementation file paths"),
+    test_command: str = typer.Option("", "--test-command", help="Command to run tests"),
+    verify_command: str = typer.Option("", "--verify-command", help="Command to verify acceptance criteria"),
     entered_by: str = typer.Option(
         "llm", "--entered-by", help="Who entered this task: 'llm' or 'user'. Defaults to 'llm' since this CLI is primarily LLM-driven."
     ),
@@ -86,11 +92,32 @@ def create_task(
     now = get_iso_timestamp()
 
     with open_session() as session:
+        # Check if task already exists
+        existing = fetch_task(session, project_id, task_id)
+        if existing is not None:
+            typer.echo(f"Error: Task '{task_id}' already exists in project '{project_id}'.", err=True)
+            raise typer.Exit(code=1)
+
         session.put(f"{base_key}/status", "PENDING")
         session.put(f"{base_key}/time_entered", now)
         session.put(f"{base_key}/entered_by", entered_by_normalized)
         if criteria:
             session.put(f"{base_key}/acceptance_criteria", criteria)
+        if spec:
+            session.put(f"{base_key}/spec", spec)
+        if depends_on:
+            deps = [d.strip() for d in depends_on.split(",") if d.strip()]
+            session.put(f"{base_key}/depends_on", json.dumps(deps))
+        if test_files:
+            files = [f.strip() for f in test_files.split(",") if f.strip()]
+            session.put(f"{base_key}/test_files", json.dumps(files))
+        if impl_files:
+            files = [f.strip() for f in impl_files.split(",") if f.strip()]
+            session.put(f"{base_key}/implementation_files", json.dumps(files))
+        if test_command:
+            session.put(f"{base_key}/test_command", test_command)
+        if verify_command:
+            session.put(f"{base_key}/verification_command", verify_command)
 
         history_key = f"{base_key}/history/{now.replace(':', '-')}"
         session.put(
@@ -129,6 +156,11 @@ def update_status(
 
         if new_status in WIP_STATUSES and old_status not in WIP_STATUSES:
             session.put(f"{base_key}/time_accepted", now)
+            # Increment attempt count
+            task = fetch_task(session, project_id, task_id)
+            if task:
+                new_count = task.attempt_count + 1
+                session.put(f"{base_key}/attempt_count", str(new_count))
         elif new_status == TERMINAL_STATUS:
             session.put(f"{base_key}/time_completed", now)
 

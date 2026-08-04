@@ -17,6 +17,7 @@ pytest-mock = "^3.14"
 
 [tool.poetry.scripts]
 ztask = "ztask.cli:app"
+ztask-ingest = "ztask.ingest:main"
 
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"

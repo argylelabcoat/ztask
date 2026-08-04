@@ -22,6 +22,44 @@ def _apply_field(task: Task, field_name: str, value: str) -> None:
             task.history.append(json.loads(value))
         except json.JSONDecodeError:
             task.history.append(value)
+    # SDD fields
+    elif field_name == "spec":
+        task.spec = value
+    elif field_name == "depends_on":
+        try:
+            task.depends_on = json.loads(value)
+        except json.JSONDecodeError:
+            task.depends_on = [v.strip() for v in value.split(",") if v.strip()]
+    elif field_name == "blocks":
+        try:
+            task.blocks = json.loads(value)
+        except json.JSONDecodeError:
+            task.blocks = [v.strip() for v in value.split(",") if v.strip()]
+    # TDD fields
+    elif field_name == "test_files":
+        try:
+            task.test_files = json.loads(value)
+        except json.JSONDecodeError:
+            task.test_files = [v.strip() for v in value.split(",") if v.strip()]
+    elif field_name == "implementation_files":
+        try:
+            task.implementation_files = json.loads(value)
+        except json.JSONDecodeError:
+            task.implementation_files = [v.strip() for v in value.split(",") if v.strip()]
+    elif field_name == "tdd_phase":
+        task.tdd_phase = value if value else None
+    elif field_name == "test_command":
+        task.test_command = value
+    elif field_name == "verification_command":
+        task.verification_command = value
+    # Execution metadata
+    elif field_name == "failure_reason":
+        task.failure_reason = value
+    elif field_name == "attempt_count":
+        try:
+            task.attempt_count = int(value)
+        except ValueError:
+            task.attempt_count = 0
 
 
 def fetch_all_tasks(session, project_id: str) -> Dict[str, Task]:

@@ -2,8 +2,8 @@
 description: >
   Convert an OpenSpec SDD directory into a dependency-ordered task graph in Zenoh.
   Use when: "ingest specs", "load tasks from spec", "import spec", "create tasks from OpenSpec",
-  or any request to convert a specification directory into executable tasks.
-  Requires: zenohd router running, `ztask` CLI installed.
+  "run tasks from spec", or any request to convert a specification directory into executable tasks.
+  Requires: zenohd router running, `ztask` CLI installed (`poetry install`).
 ---
 
 # ztask-ingest — OpenSpec to Task Graph
@@ -13,15 +13,18 @@ You are a Specification Ingestion Agent. Your job: read an OpenSpec SDD director
 ## Invocation
 
 ```
-/ztask-ingest <project-id> <spec-directory>
+/ztask-ingest <project-id> <spec-path>
 ```
 
-**Example:**
+**Examples:**
 ```
 /ztask-ingest myapp ./openspec/specs/myapp/
+/ztask-ingest ztask ./openspec/specs/cli/task-model.md
 ```
 
-## Input: OpenSpec Directory Structure
+## Input Modes
+
+### Mode 1: Greenfield (directory with tasks/)
 
 ```
 <spec-directory>/
@@ -32,7 +35,43 @@ You are a Specification Ingestion Agent. Your job: read an OpenSpec SDD director
     03-auth-refresh.md
 ```
 
-### Task File Format
+### Mode 2: Update (single spec file)
+
+A single markdown spec file with numbered sections that can be extracted as tasks:
+
+```markdown
+# SDD→TDD Task Model Extension
+
+## 1. Extend Python Model
+
+Add new fields to the Task dataclass...
+
+### Acceptance Criteria
+- Task dataclass has all new fields
+- to_dict() includes non-empty new fields
+
+### Test Files
+- tests/unit/test_models.py
+
+### Implementation Files
+- ztask/models.py
+
+## 2. Update CLI Commands
+
+Add new flags to create command...
+
+### Acceptance Criteria
+- ztask create accepts --spec, --depends-on, etc.
+- Invalid input returns error
+
+### Test Files
+- tests/unit/test_cli.py
+
+### Implementation Files
+- ztask/cli.py
+```
+
+## Task File Format
 
 Each task file uses markdown with structured sections:
 
@@ -90,20 +129,22 @@ Task IDs are derived from filenames:
 
 ### Step 1: Validate Input
 
-1. Check that `<spec-directory>` exists
-2. Check that `<spec-directory>/tasks/` exists and contains `*.md` files
-3. If `spec.md` exists at the directory root, read it for project-level context
+1. Check that `<spec-path>` exists
+2. If it's a directory, check that `tasks/` exists and contains `*.md` files
+3. If it's a file, check that it's a valid markdown file
 4. If any check fails, report error and stop
 
 ### Step 2: Parse Task Files
 
-For each `*.md` file in `tasks/`:
-1. Extract task ID from filename
-2. Parse markdown sections into fields
-3. Validate:
-   - `## Acceptance Criteria` section exists and is non-empty
-   - Referenced `depends_on` task IDs exist in the set of task files
-4. Store parsed task in a map keyed by task ID
+For greenfield (directory):
+- Parse each `*.md` file in `tasks/`
+- Extract task ID from filename
+- Parse markdown sections into fields
+
+For update (single file):
+- Parse numbered sections (## 1. Title, ## 2. Title, etc.)
+- Extract task ID from section title
+- Parse subsections for acceptance criteria, dependencies, etc.
 
 ### Step 3: Validate Dependency Graph
 
@@ -130,11 +171,18 @@ ztask get <task-id> --project <project-id>
 
 ### Step 6: Create Tasks
 
-For each task (in topological order):
+Use the `ztask-ingest` CLI command:
+
+```bash
+ztask-ingest <project-id> <spec-path> [--dry-run]
+```
+
+Or manually create tasks for each task (in topological order):
 
 ```bash
 ztask create <task-id> --project <project-id> \
   --criteria "<acceptance_criteria>" \
+  --spec "<spec>" \
   --depends-on "<dep1>,<dep2>" \
   --test-files "<file1>,<file2>" \
   --impl-files "<file1>,<file2>" \
@@ -142,27 +190,32 @@ ztask create <task-id> --project <project-id> \
   --verify-command "<cmd>"
 ```
 
-Note: `--spec` flag may not exist yet. If not, store spec content in a note or skip.
-
 ### Step 7: Report
 
 ```
-Ingesting OpenSpec from ./openspec/specs/myapp/
+Ingesting OpenSpec from ./openspec/specs/cli/task-model.md
 
-  spec.md: loaded project spec (1,234 words)
-  tasks/: found 4 task files
+  Found 4 task(s)
+  - extend-python-model: Extend Python Model
+    Depends on: []
+  - update-cli: Update CLI Commands
+    Depends on: [extend-python-model]
+  - update-queries: Update Queries
+    Depends on: [extend-python-model]
+  - update-web-model: Update Web Model
+    Depends on: [extend-python-model]
 
   Dependency graph:
-    db-migrations (no deps)
-    auth-login → depends on [db-migrations]
-    auth-refresh → depends on [auth-login]
-    auth-logout → depends on [auth-login]
+    extend-python-model (no deps)
+    update-cli -> depends on [extend-python-model]
+    update-queries -> depends on [extend-python-model]
+    update-web-model -> depends on [extend-python-model]
 
-  Creating tasks in project 'myapp':
-    ✓ db-migrations — PENDING
-    ✓ auth-login — PENDING (blocked by: db-migrations)
-    ✓ auth-refresh — PENDING (blocked by: auth-login)
-    ✓ auth-logout — PENDING (blocked by: auth-login)
+  Creating tasks in project 'ztask':
+    ✓ extend-python-model — PENDING
+    ✓ update-cli — PENDING (blocked by: extend-python-model)
+    ✓ update-queries — PENDING (blocked by: extend-python-model)
+    ✓ update-web-model — PENDING (blocked by: extend-python-model)
 
   Done. 4 tasks created, 0 skipped, 0 cycles detected.
 ```
@@ -171,7 +224,7 @@ Ingesting OpenSpec from ./openspec/specs/myapp/
 
 | Error | Action |
 |-------|--------|
-| Spec directory not found | Error: "Directory '<path>' not found" |
+| Spec path not found | Error: "Path '<path>' not found" |
 | No task files | Error: "No .md files found in '<path>/tasks/'" |
 | Cycle detected | Error: "Circular dependency: A → B → C → A" |
 | Missing acceptance criteria | Warning: skip task, continue |
@@ -186,7 +239,22 @@ Ingesting OpenSpec from ./openspec/specs/myapp/
 2. **Validate before creating.** Check for cycles, missing fields, and conflicts before writing to Zenoh.
 3. **Report clearly.** Show what was parsed, what was created, what was skipped, and why.
 4. **Fail fast on cycles.** Circular dependencies are a hard error — do not create any tasks.
-5. **Preserve spec content.** If the CLI supports `--spec`, use it. Otherwise, note that spec content should be stored separately.
+5. **Preserve spec content.** Use the `--spec` flag to store the full spec context.
+
+## Dry Run Mode
+
+Use `--dry-run` to validate and preview without creating tasks:
+
+```bash
+ztask-ingest myapp ./openspec/specs/myapp/ --dry-run
+```
+
+This will:
+- Parse all task files
+- Validate dependencies
+- Print the dependency graph
+- Show what would be created
+- NOT write to Zenoh
 
 ## Relationship to Other Skills
 
