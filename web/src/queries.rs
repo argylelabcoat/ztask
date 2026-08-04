@@ -63,6 +63,7 @@ pub struct ProjectSummary {
     pub total: usize,
     pub incomplete: usize,
     pub wip: usize,
+    pub last_activity: Option<String>,
 }
 
 pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
@@ -76,6 +77,7 @@ pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
             total: 0,
             incomplete: 0,
             wip: 0,
+            last_activity: None,
         });
         summary.total += 1;
         let status = value.to_uppercase();
@@ -84,6 +86,25 @@ pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
         }
         if WIP_STATUSES.contains(&status.as_str()) {
             summary.wip += 1;
+        }
+    }
+
+    for (key, value) in store.get("projects/*/tasks/*/history/*").await {
+        let parts: Vec<&str> = key.split('/').collect();
+        let Some(project_id) = parts.get(1) else { continue };
+        let Some(summary) = summaries.get_mut(*project_id) else { continue };
+        let Some(timestamp) = serde_json::from_str::<serde_json::Value>(&value)
+            .ok()
+            .and_then(|json| json.get("timestamp").and_then(|t| t.as_str()).map(str::to_string))
+        else {
+            continue;
+        };
+        let should_update = match &summary.last_activity {
+            Some(existing) => timestamp.as_str() > existing.as_str(),
+            None => true,
+        };
+        if should_update {
+            summary.last_activity = Some(timestamp);
         }
     }
 
@@ -140,7 +161,36 @@ mod tests {
         let projects = fetch_all_projects(&store).await;
 
         assert_eq!(projects.len(), 2);
-        assert_eq!(projects[0], ProjectSummary { id: "p1".to_string(), total: 2, incomplete: 1, wip: 0 });
-        assert_eq!(projects[1], ProjectSummary { id: "p2".to_string(), total: 1, incomplete: 1, wip: 1 });
+        assert_eq!(
+            projects[0],
+            ProjectSummary { id: "p1".to_string(), total: 2, incomplete: 1, wip: 0, last_activity: None }
+        );
+        assert_eq!(
+            projects[1],
+            ProjectSummary { id: "p2".to_string(), total: 1, incomplete: 1, wip: 1, last_activity: None }
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_all_projects_computes_last_activity_from_latest_history_entry() {
+        let store = FakeStore::new()
+            .seed("projects/p1/tasks/t1/status", "PENDING")
+            .seed(
+                "projects/p1/tasks/t1/history/2026-07-31T00-00-00",
+                r#"{"timestamp":"2026-07-31T00:00:00+00:00","from_status":"NONE","to_status":"PENDING","note":""}"#,
+            )
+            .seed(
+                "projects/p1/tasks/t1/history/2026-08-02T00-00-00",
+                r#"{"timestamp":"2026-08-02T00:00:00+00:00","from_status":"PENDING","to_status":"IN_PROGRESS","note":""}"#,
+            )
+            .seed("projects/p2/tasks/t1/status", "PENDING");
+
+        let projects = fetch_all_projects(&store).await;
+
+        let p1 = projects.iter().find(|p| p.id == "p1").unwrap();
+        assert_eq!(p1.last_activity.as_deref(), Some("2026-08-02T00:00:00+00:00"));
+
+        let p2 = projects.iter().find(|p| p.id == "p2").unwrap();
+        assert_eq!(p2.last_activity, None);
     }
 }
