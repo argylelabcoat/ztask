@@ -95,14 +95,198 @@ fn format_duration(duration: chrono::Duration) -> String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskTiming {
+    pub id: String,
+    pub status: String,
+    pub queued_duration: Option<String>,
+    pub work_duration: Option<String>,
+    pub current_status_duration: String,
+    pub transition_count: usize,
+    pub stuck: bool,
+    pub churning: bool,
+}
+
+pub fn compute_timing_table(
+    tasks: &HashMap<String, Task>,
+    thresholds: &Thresholds,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Vec<TaskTiming> {
+    let mut result: Vec<TaskTiming> = tasks
+        .values()
+        .map(|task| {
+            let status = task.status.to_uppercase();
+            let is_terminal = status == TERMINAL_STATUS;
+
+            let entered = task.time_entered.as_deref().and_then(parse_timestamp);
+            let accepted = task.time_accepted.as_deref().and_then(parse_timestamp);
+            let completed = task.time_completed.as_deref().and_then(parse_timestamp);
+
+            let queued_duration = match (entered, accepted) {
+                (Some(e), Some(a)) => Some(format_duration(a - e)),
+                _ => None,
+            };
+
+            let work_duration = match (accepted, completed, is_terminal) {
+                (Some(a), Some(c), true) => Some(format_duration(c - a)),
+                (Some(a), None, false) => Some(format_duration(now - a)),
+                _ => None,
+            };
+
+            let last_change = task.history.iter().filter_map(|h| parse_timestamp(&h.timestamp)).max();
+            let current_status_duration = match last_change {
+                Some(t) => format_duration(now - t),
+                None => "-".to_string(),
+            };
+
+            let transition_count = task.history.len();
+
+            let hours_since_change = last_change.map(|t| (now - t).num_minutes() as f64 / 60.0);
+            let stuck = !is_terminal && hours_since_change.map(|h| h > thresholds.stuck_hours).unwrap_or(false);
+            let churning = !is_terminal && transition_count >= thresholds.churn_count;
+
+            TaskTiming {
+                id: task.id.clone(),
+                status: task.status.clone(),
+                queued_duration,
+                work_duration,
+                current_status_duration,
+                transition_count,
+                stuck,
+                churning,
+            }
+        })
+        .collect();
+
+    result.sort_by(|a, b| a.id.cmp(&b.id));
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::HistoryEntry;
 
     fn task_with_status(id: &str, status: &str) -> Task {
         let mut task = Task::new(id);
         task.status = status.to_string();
         task
+    }
+
+    fn history_entry(timestamp: &str, from: &str, to: &str) -> HistoryEntry {
+        HistoryEntry { timestamp: timestamp.to_string(), from_status: from.to_string(), to_status: to.to_string(), note: String::new() }
+    }
+
+    #[test]
+    fn compute_timing_table_computes_queued_and_work_duration_for_completed_task() {
+        let mut task = Task::new("t1");
+        task.status = "COMPLETED".to_string();
+        task.time_entered = Some("2026-08-01T00:00:00+00:00".to_string());
+        task.time_accepted = Some("2026-08-01T01:00:00+00:00".to_string());
+        task.time_completed = Some("2026-08-01T04:00:00+00:00".to_string());
+        task.history = vec![history_entry("2026-08-01T04:00:00+00:00", "IN_PROGRESS", "COMPLETED")];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), task);
+
+        let now = parse_timestamp("2026-08-01T05:00:00+00:00").unwrap();
+        let timings = compute_timing_table(&tasks, &Thresholds::default(), now);
+
+        assert_eq!(timings.len(), 1);
+        assert_eq!(timings[0].queued_duration.as_deref(), Some("1h 0m"));
+        assert_eq!(timings[0].work_duration.as_deref(), Some("3h 0m"));
+        assert!(!timings[0].stuck);
+        assert!(!timings[0].churning);
+    }
+
+    #[test]
+    fn compute_timing_table_uses_now_for_open_task_work_duration() {
+        let mut task = Task::new("t1");
+        task.status = "IN_PROGRESS".to_string();
+        task.time_entered = Some("2026-08-01T00:00:00+00:00".to_string());
+        task.time_accepted = Some("2026-08-01T01:00:00+00:00".to_string());
+        task.history = vec![history_entry("2026-08-01T01:00:00+00:00", "PENDING", "IN_PROGRESS")];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), task);
+
+        let now = parse_timestamp("2026-08-01T04:00:00+00:00").unwrap();
+        let timings = compute_timing_table(&tasks, &Thresholds::default(), now);
+
+        assert_eq!(timings[0].work_duration.as_deref(), Some("3h 0m"));
+    }
+
+    #[test]
+    fn compute_timing_table_flags_stuck_when_over_threshold() {
+        let mut task = Task::new("t1");
+        task.status = "IN_PROGRESS".to_string();
+        task.history = vec![history_entry("2026-08-01T00:00:00+00:00", "PENDING", "IN_PROGRESS")];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), task);
+
+        let now = parse_timestamp("2026-08-01T03:00:00+00:00").unwrap();
+        let thresholds = Thresholds { stuck_hours: 2.0, churn_count: 100 };
+        let timings = compute_timing_table(&tasks, &thresholds, now);
+
+        assert!(timings[0].stuck);
+        assert!(!timings[0].churning);
+    }
+
+    #[test]
+    fn compute_timing_table_flags_churning_when_transition_count_meets_threshold() {
+        let mut task = Task::new("t1");
+        task.status = "IN_PROGRESS".to_string();
+        task.history = vec![
+            history_entry("2026-08-01T00:00:00+00:00", "NONE", "PENDING"),
+            history_entry("2026-08-01T00:10:00+00:00", "PENDING", "IN_PROGRESS"),
+            history_entry("2026-08-01T00:20:00+00:00", "IN_PROGRESS", "PENDING"),
+            history_entry("2026-08-01T00:30:00+00:00", "PENDING", "IN_PROGRESS"),
+        ];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), task);
+
+        let now = parse_timestamp("2026-08-01T00:31:00+00:00").unwrap();
+        let thresholds = Thresholds { stuck_hours: 100.0, churn_count: 4 };
+        let timings = compute_timing_table(&tasks, &thresholds, now);
+
+        assert!(timings[0].churning);
+        assert!(!timings[0].stuck);
+    }
+
+    #[test]
+    fn compute_timing_table_never_flags_completed_tasks() {
+        let mut task = Task::new("t1");
+        task.status = "COMPLETED".to_string();
+        task.history = vec![
+            history_entry("2026-08-01T00:00:00+00:00", "NONE", "PENDING"),
+            history_entry("2026-08-01T00:01:00+00:00", "PENDING", "IN_PROGRESS"),
+            history_entry("2026-08-01T00:02:00+00:00", "IN_PROGRESS", "PENDING"),
+            history_entry("2026-08-01T00:03:00+00:00", "PENDING", "COMPLETED"),
+        ];
+
+        let mut tasks = HashMap::new();
+        tasks.insert("t1".to_string(), task);
+
+        let now = parse_timestamp("2030-01-01T00:00:00+00:00").unwrap();
+        let thresholds = Thresholds { stuck_hours: 1.0, churn_count: 4 };
+        let timings = compute_timing_table(&tasks, &thresholds, now);
+
+        assert!(!timings[0].stuck);
+        assert!(!timings[0].churning);
+    }
+
+    #[test]
+    fn compute_timing_table_sorts_by_id() {
+        let mut tasks = HashMap::new();
+        tasks.insert("b".to_string(), Task::new("b"));
+        tasks.insert("a".to_string(), Task::new("a"));
+
+        let now = parse_timestamp("2026-08-01T00:00:00+00:00").unwrap();
+        let timings = compute_timing_table(&tasks, &Thresholds::default(), now);
+
+        assert_eq!(timings.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
     }
 
     #[test]
