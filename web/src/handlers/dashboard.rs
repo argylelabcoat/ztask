@@ -1,5 +1,8 @@
 use askama::Template;
 use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Redirect, Response};
+use axum::Form;
 use serde::Deserialize;
 
 use crate::render::HtmlTemplate;
@@ -69,6 +72,49 @@ pub async fn show(State(state): State<AppState>, Query(query): Query<SortQuery>)
     HtmlTemplate(build_dashboard(&state, sort, dir, None, String::new(), String::new(), String::new()).await)
 }
 
+#[derive(Deserialize)]
+pub struct CreateProjectForm {
+    project_id: String,
+    task_id: String,
+    #[serde(default)]
+    criteria: String,
+}
+
+pub async fn create(State(state): State<AppState>, Form(form): Form<CreateProjectForm>) -> Response {
+    if !crate::is_valid_id(&form.project_id) || !crate::is_valid_id(&form.task_id) {
+        let template = build_dashboard(
+            &state,
+            queries::SortKey::Name,
+            queries::SortDir::Asc,
+            Some("Invalid project or task ID.".to_string()),
+            form.project_id,
+            form.task_id,
+            form.criteria,
+        )
+        .await;
+        return (StatusCode::BAD_REQUEST, HtmlTemplate(template)).into_response();
+    }
+
+    let existing = queries::fetch_all_tasks(state.store.as_ref(), &form.project_id).await;
+    if !existing.is_empty() {
+        let template = build_dashboard(
+            &state,
+            queries::SortKey::Name,
+            queries::SortDir::Asc,
+            Some(format!("Project '{}' already exists.", form.project_id)),
+            form.project_id,
+            form.task_id,
+            form.criteria,
+        )
+        .await;
+        return (StatusCode::CONFLICT, HtmlTemplate(template)).into_response();
+    }
+
+    let now = crate::iso_now();
+    crate::tasks::create_task(state.store.as_ref(), &form.project_id, &form.task_id, &form.criteria, &now).await;
+    Redirect::to(&format!("/projects/{}", form.project_id)).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
@@ -134,5 +180,69 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn create_project_redirects_and_creates_first_task() {
+        let store = Arc::new(FakeStore::new());
+        let state = AppState { store: store.clone() as Arc<dyn crate::zenoh_store::ZenohStore> };
+
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/projects")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("project_id=newproj&task_id=t1&criteria=Given+X"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.headers().get("location").unwrap().to_str().unwrap(), "/projects/newproj");
+
+        let put_calls = store.put_calls.lock().unwrap();
+        assert!(put_calls.iter().any(|(k, v)| k == "projects/newproj/tasks/t1/status" && v == "PENDING"));
+    }
+
+    #[tokio::test]
+    async fn create_project_rejects_invalid_project_id() {
+        let store = FakeStore::new();
+        let state = AppState { store: Arc::new(store) };
+
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/projects")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("project_id=bad*id&task_id=t1&criteria="))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn create_project_rejects_project_that_already_has_tasks() {
+        let store = FakeStore::new().seed("projects/existing/tasks/t1/status", "PENDING");
+        let state = AppState { store: Arc::new(store) };
+
+        let response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/projects")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("project_id=existing&task_id=t2&criteria="))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 }
