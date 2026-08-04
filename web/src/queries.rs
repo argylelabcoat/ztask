@@ -63,6 +63,85 @@ pub struct ProjectSummary {
     pub total: usize,
     pub incomplete: usize,
     pub wip: usize,
+    pub last_activity: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    Name,
+    Total,
+    Incomplete,
+    Wip,
+    Activity,
+}
+
+impl SortKey {
+    pub fn parse(s: &str) -> SortKey {
+        match s {
+            "total" => SortKey::Total,
+            "incomplete" => SortKey::Incomplete,
+            "wip" => SortKey::Wip,
+            "activity" => SortKey::Activity,
+            _ => SortKey::Name,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SortKey::Name => "name",
+            SortKey::Total => "total",
+            SortKey::Incomplete => "incomplete",
+            SortKey::Wip => "wip",
+            SortKey::Activity => "activity",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortDir {
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    pub fn parse(s: &str) -> SortDir {
+        if s == "desc" {
+            SortDir::Desc
+        } else {
+            SortDir::Asc
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SortDir::Asc => "asc",
+            SortDir::Desc => "desc",
+        }
+    }
+
+    pub fn flip(self) -> SortDir {
+        match self {
+            SortDir::Asc => SortDir::Desc,
+            SortDir::Desc => SortDir::Asc,
+        }
+    }
+}
+
+pub fn sort_projects(projects: &mut [ProjectSummary], key: SortKey, dir: SortDir) {
+    projects.sort_by(|a, b| {
+        let ordering = match key {
+            SortKey::Name => a.id.cmp(&b.id),
+            SortKey::Total => a.total.cmp(&b.total),
+            SortKey::Incomplete => a.incomplete.cmp(&b.incomplete),
+            SortKey::Wip => a.wip.cmp(&b.wip),
+            SortKey::Activity => a.last_activity.cmp(&b.last_activity),
+        };
+        if dir == SortDir::Desc {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
 }
 
 pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
@@ -76,6 +155,7 @@ pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
             total: 0,
             incomplete: 0,
             wip: 0,
+            last_activity: None,
         });
         summary.total += 1;
         let status = value.to_uppercase();
@@ -84,6 +164,22 @@ pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
         }
         if WIP_STATUSES.contains(&status.as_str()) {
             summary.wip += 1;
+        }
+    }
+
+    for (key, value) in store.get("projects/*/tasks/*/history/*").await {
+        let parts: Vec<&str> = key.split('/').collect();
+        let Some(project_id) = parts.get(1) else { continue };
+        let Some(summary) = summaries.get_mut(*project_id) else { continue };
+        let Some(timestamp) = serde_json::from_str::<HistoryEntry>(&value).ok().map(|entry| entry.timestamp) else {
+            continue;
+        };
+        let should_update = match &summary.last_activity {
+            Some(existing) => timestamp.as_str() > existing.as_str(),
+            None => true,
+        };
+        if should_update {
+            summary.last_activity = Some(timestamp);
         }
     }
 
@@ -140,7 +236,100 @@ mod tests {
         let projects = fetch_all_projects(&store).await;
 
         assert_eq!(projects.len(), 2);
-        assert_eq!(projects[0], ProjectSummary { id: "p1".to_string(), total: 2, incomplete: 1, wip: 0 });
-        assert_eq!(projects[1], ProjectSummary { id: "p2".to_string(), total: 1, incomplete: 1, wip: 1 });
+        assert_eq!(
+            projects[0],
+            ProjectSummary { id: "p1".to_string(), total: 2, incomplete: 1, wip: 0, last_activity: None }
+        );
+        assert_eq!(
+            projects[1],
+            ProjectSummary { id: "p2".to_string(), total: 1, incomplete: 1, wip: 1, last_activity: None }
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_all_projects_computes_last_activity_from_latest_history_entry() {
+        let store = FakeStore::new()
+            .seed("projects/p1/tasks/t1/status", "PENDING")
+            .seed(
+                "projects/p1/tasks/t1/history/2026-07-31T00-00-00",
+                r#"{"timestamp":"2026-07-31T00:00:00+00:00","from_status":"NONE","to_status":"PENDING","note":""}"#,
+            )
+            .seed(
+                "projects/p1/tasks/t1/history/2026-08-02T00-00-00",
+                r#"{"timestamp":"2026-08-02T00:00:00+00:00","from_status":"PENDING","to_status":"IN_PROGRESS","note":""}"#,
+            )
+            .seed("projects/p2/tasks/t1/status", "PENDING");
+
+        let projects = fetch_all_projects(&store).await;
+
+        let p1 = projects.iter().find(|p| p.id == "p1").unwrap();
+        assert_eq!(p1.last_activity.as_deref(), Some("2026-08-02T00:00:00+00:00"));
+
+        let p2 = projects.iter().find(|p| p.id == "p2").unwrap();
+        assert_eq!(p2.last_activity, None);
+    }
+
+    fn sample_projects() -> Vec<ProjectSummary> {
+        vec![
+            ProjectSummary { id: "b".to_string(), total: 5, incomplete: 1, wip: 2, last_activity: Some("2026-08-01T00:00:00+00:00".to_string()) },
+            ProjectSummary { id: "a".to_string(), total: 2, incomplete: 3, wip: 0, last_activity: Some("2026-08-03T00:00:00+00:00".to_string()) },
+        ]
+    }
+
+    #[test]
+    fn sort_key_parse_defaults_to_name_for_unknown_values() {
+        assert_eq!(SortKey::parse("bogus"), SortKey::Name);
+        assert_eq!(SortKey::parse("total"), SortKey::Total);
+        assert_eq!(SortKey::parse("incomplete"), SortKey::Incomplete);
+        assert_eq!(SortKey::parse("wip"), SortKey::Wip);
+        assert_eq!(SortKey::parse("activity"), SortKey::Activity);
+    }
+
+    #[test]
+    fn sort_dir_parse_defaults_to_asc_for_unknown_values() {
+        assert_eq!(SortDir::parse("bogus"), SortDir::Asc);
+        assert_eq!(SortDir::parse("desc"), SortDir::Desc);
+        assert_eq!(SortDir::parse("asc"), SortDir::Asc);
+    }
+
+    #[test]
+    fn sort_dir_flip_toggles() {
+        assert_eq!(SortDir::Asc.flip(), SortDir::Desc);
+        assert_eq!(SortDir::Desc.flip(), SortDir::Asc);
+    }
+
+    #[test]
+    fn sort_projects_by_name_ascending() {
+        let mut projects = sample_projects();
+        sort_projects(&mut projects, SortKey::Name, SortDir::Asc);
+        assert_eq!(projects.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn sort_projects_by_total_descending() {
+        let mut projects = sample_projects();
+        sort_projects(&mut projects, SortKey::Total, SortDir::Desc);
+        assert_eq!(projects.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), vec!["b", "a"]);
+    }
+
+    #[test]
+    fn sort_projects_by_incomplete_ascending() {
+        let mut projects = sample_projects();
+        sort_projects(&mut projects, SortKey::Incomplete, SortDir::Asc);
+        assert_eq!(projects.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), vec!["b", "a"]);
+    }
+
+    #[test]
+    fn sort_projects_by_wip_descending() {
+        let mut projects = sample_projects();
+        sort_projects(&mut projects, SortKey::Wip, SortDir::Desc);
+        assert_eq!(projects.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), vec!["b", "a"]);
+    }
+
+    #[test]
+    fn sort_projects_by_activity_descending_puts_most_recent_first() {
+        let mut projects = sample_projects();
+        sort_projects(&mut projects, SortKey::Activity, SortDir::Desc);
+        assert_eq!(projects.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
     }
 }

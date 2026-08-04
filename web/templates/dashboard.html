@@ -2,12 +2,32 @@
 {% block title %}All Projects — Zenoh Tasks{% endblock %}
 {% block content %}
 <h1>Projects</h1>
+
+{% if let Some(error) = form_error %}
+<p style="color:#b00020">{{ error }}</p>
+{% endif %}
+
+<form method="post" action="/projects">
+    <fieldset role="group">
+        <input type="text" name="project_id" placeholder="Project ID" value="{{ form_project_id }}" required>
+        <input type="text" name="task_id" placeholder="First task ID" value="{{ form_task_id }}" required>
+        <input type="text" name="criteria" placeholder="Acceptance criteria (optional)" value="{{ form_criteria }}">
+        <button type="submit">Create project</button>
+    </fieldset>
+</form>
+
 {% if projects.is_empty() %}
 <p>No projects yet.</p>
 {% else %}
 <table>
     <thead>
-        <tr><th>Project</th><th>Total</th><th>Incomplete</th><th>WIP</th></tr>
+        <tr>
+            <th><a href="{{ sort_name_href }}">Project{% if active_sort == "name" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
+            <th><a href="{{ sort_total_href }}">Total{% if active_sort == "total" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
+            <th><a href="{{ sort_incomplete_href }}">Incomplete{% if active_sort == "incomplete" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
+            <th><a href="{{ sort_wip_href }}">WIP{% if active_sort == "wip" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
+            <th><a href="{{ sort_activity_href }}">Activity{% if active_sort == "activity" %} {% if active_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}</a></th>
+        </tr>
     </thead>
     <tbody>
         {% for p in projects %}
@@ -16,6 +36,7 @@
             <td>{{ p.total }}</td>
             <td>{{ p.incomplete }}</td>
             <td>{{ p.wip }}</td>
+            <td>{{ p.last_activity.as_deref().unwrap_or("-") }}</td>
         </tr>
         {% endfor %}
     </tbody>

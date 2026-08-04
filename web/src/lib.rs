@@ -29,6 +29,7 @@ pub fn is_valid_id(value: &str) -> bool {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(handlers::dashboard::show))
+        .route("/projects", post(handlers::dashboard::create))
         .route("/projects/{id}", get(handlers::project::show))
         .route("/projects/{id}/tasks", post(handlers::project::create))
         .route("/projects/{id}/tasks/{task_id}/status", post(handlers::task::update_status))
