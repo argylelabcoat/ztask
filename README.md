@@ -11,9 +11,11 @@ Three pieces:
 - **`ztask`** — a Python CLI for LLM agents and developers to create, query,
   and update tasks. Defaults task creation to `entered_by: LLM`.
 - **`ztask-web`** — a Rust (axum + htmx) admin web UI for humans: a sortable
-  all-projects dashboard with inline project creation, and a per-project
-  dashboard with inline create/update-status/edit-criteria/delete. Defaults
-  task creation to `entered_by: USER`.
+  all-projects dashboard with inline project creation, a per-project
+  dashboard with inline create/update-status/edit-criteria/delete, and a
+  per-project metrics dashboard (status breakdown, stuck/churning task
+  detection, completion velocity, a status transition heatmap, and per-task
+  timing). Defaults task creation to `entered_by: USER`.
 - **router** — a `zenohd` + Garry container that both talk to.
 
 ## Quick start
@@ -136,9 +138,13 @@ keyspace is the shared contract.
 
 ![All-projects dashboard](docs/images/dashboard.png)
 
-**Per-project view:**
+**Per-project view** — Delete is its own column, separate from Update/Save:
 
 ![Per-project view](docs/images/project.png)
+
+**Per-project metrics dashboard** — status breakdown, stuck/churning detection, completion velocity, a status transition heatmap, and per-task timing:
+
+![Per-project metrics dashboard](docs/images/metrics.png)
 
 ## Web UI
 
