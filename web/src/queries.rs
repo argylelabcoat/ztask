@@ -188,6 +188,26 @@ pub async fn fetch_all_projects(store: &dyn ZenohStore) -> Vec<ProjectSummary> {
     result
 }
 
+pub async fn fetch_thresholds(store: &dyn ZenohStore, project_id: &str) -> crate::metrics::Thresholds {
+    let mut thresholds = crate::metrics::Thresholds::default();
+
+    let stuck_key = format!("projects/{project_id}/config/stuck_threshold_hours");
+    if let Some((_, value)) = store.get(&stuck_key).await.into_iter().next() {
+        if let Ok(parsed) = value.parse::<f64>() {
+            thresholds.stuck_hours = parsed;
+        }
+    }
+
+    let churn_key = format!("projects/{project_id}/config/churn_transition_count");
+    if let Some((_, value)) = store.get(&churn_key).await.into_iter().next() {
+        if let Ok(parsed) = value.parse::<usize>() {
+            thresholds.churn_count = parsed;
+        }
+    }
+
+    thresholds
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,5 +351,29 @@ mod tests {
         let mut projects = sample_projects();
         sort_projects(&mut projects, SortKey::Activity, SortDir::Desc);
         assert_eq!(projects.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn fetch_thresholds_returns_defaults_when_keys_missing() {
+        let store = FakeStore::new();
+        let thresholds = fetch_thresholds(&store, "p1").await;
+        assert_eq!(thresholds, crate::metrics::Thresholds::default());
+    }
+
+    #[tokio::test]
+    async fn fetch_thresholds_reads_seeded_values() {
+        let store = FakeStore::new()
+            .seed("projects/p1/config/stuck_threshold_hours", "6")
+            .seed("projects/p1/config/churn_transition_count", "10");
+        let thresholds = fetch_thresholds(&store, "p1").await;
+        assert_eq!(thresholds.stuck_hours, 6.0);
+        assert_eq!(thresholds.churn_count, 10);
+    }
+
+    #[tokio::test]
+    async fn fetch_thresholds_falls_back_on_unparseable_values() {
+        let store = FakeStore::new().seed("projects/p1/config/stuck_threshold_hours", "not-a-number");
+        let thresholds = fetch_thresholds(&store, "p1").await;
+        assert_eq!(thresholds.stuck_hours, crate::metrics::Thresholds::default().stuck_hours);
     }
 }
