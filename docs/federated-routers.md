@@ -10,10 +10,10 @@ How to run multiple ztask routers with project-scoped data replication so that L
 │  Storage: projects/**  (key_expr)                                   │
 │  Listen:  tcp/0.0.0.0:7447                                          │
 │                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ project-a    │  │ project-b    │  │ project-c    │              │
-│  │ tasks/...    │  │ tasks/...    │  │ tasks/...    │              │
-│  └──────────────┘  └──────────────┘  └──────────────┘              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │ project-a    │  │ project-b    │  │ project-c    │               │
+│  │ tasks/...    │  │ tasks/...    │  │ tasks/...    │               │
+│  └──────────────┘  └──────────────┘  └──────────────┘               │
 └─────────────────────────────────────────────────────────────────────┘
         │                    │                    │
         │ (agent router      │ (agent router      │ (agent router
@@ -27,8 +27,8 @@ How to run multiple ztask routers with project-scoped data replication so that L
 │ scouting off │    │ scouting off │    │ scouting off │
 │              │    │              │    │              │
 │ ┌──────────┐ │    │ ┌──────────┐ │    │ ┌──────────┐ │
-│ │LLM Agent│ │    │ │LLM Agent│ │    │ │LLM Agent│ │
-│ │ (docker)│ │    │ │ (docker)│ │    │ │ (docker)│ │
+│ │LLM Agent │ │    │ │LLM Agent │ │    │ │LLM Agent │ │
+│ │ (docker) │ │    │ │ (docker) │ │    │ │ (docker) │ │
 │ └──────────┘ │    │ └──────────┘ │    │ └──────────┘ │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
