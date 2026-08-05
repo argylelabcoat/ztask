@@ -94,8 +94,8 @@ def parse_list_items(content: str) -> List[str]:
 def is_gherkin_format(text: str) -> bool:
     """Check if text is in Gherkin format."""
     # Look for Feature: and Scenario: keywords
-    has_feature = bool(re.search(r'^Feature:', text, re.MULTILINE))
-    has_scenario = bool(re.search(r'^Scenario:', text, re.MULTILINE))
+    has_feature = bool(re.search(r'^\s*Feature:', text, re.MULTILINE))
+    has_scenario = bool(re.search(r'^\s*Scenario:', text, re.MULTILINE))
     return has_feature and has_scenario
 
 
